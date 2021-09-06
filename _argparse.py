@@ -56,6 +56,7 @@ def _parse_arguments():
     parser.add_argument("--qtz-num-special-bins", type=int, default=3)
     parser.add_argument("--qtz-l-value", type=int, default=-1)
     parser.add_argument("--qtz-u-value", type=int, default=2)
+    parser.add_argument("--qtz-window-length", type=int, default=4)
     parser.add_argument("--ts-train-split", type=float, default=0.7)
     parser.add_argument("--ts-eval-split", type=float, default=0.15)
     parser.add_argument("--qds-num-last-unmasked", type=int, default=0)

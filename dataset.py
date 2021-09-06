@@ -16,7 +16,9 @@ class QDataset(Dataset):
     @typechecked
     def __init__(self, 
                  _data: Union[TimeSeries, List[TimeSeries], QTimeSeries, List[QTimeSeries]],
-                 split: Literal["train", "eval", "test", "none"] = "none") -> None:
+                 split: Literal["train", "eval", "test", "none"] = "none",
+                 *,
+                 batch: bool = False) -> None:
 
         if isinstance(_data, list):
             _data_list = _data
@@ -24,7 +26,7 @@ class QDataset(Dataset):
             _data_list = [_data]
 
         if type(_data_list[0]).__name__ == TimeSeries.__name__:
-            self.raw_data =  TimeSeriesQuantizer().quantize(_data_list)
+            self.raw_data =  TimeSeriesQuantizer().quantize(_data_list, batch=batch)
         else:
             self.raw_data = _data_list
 
@@ -63,15 +65,19 @@ class QDataset(Dataset):
         self.data = {idx: {"y": self._get_y(idx),
                            "y_hat": self._get_y_hat(idx),
                            "mask": self._get_mask(idx)} for idx in range(len(self.raw_data))}
+        print(self.data)
 
 if __name__ == "__main__":
     import numpy as np
     x = np.arange(15)
     y = np.arange(15)
     ts = TimeSeries(x,y)
-    qds = QDataset(ts)
+    qds = QDataset(ts, batch=True)
     y, y_hat, mask, i = qds[0]
     print(y.shape)
     print(y_hat.shape)
     print(mask.shape)
     print(i.shape)
+    dl = DataLoader(qds, batch_size=4, shuffle=False)
+    for b in dl:
+        print(b)

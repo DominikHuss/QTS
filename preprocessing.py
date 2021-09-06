@@ -14,7 +14,10 @@ class TimeSeries():
     @typechecked
     def __init__(self, 
                  x: np.ndarray, 
-                 y: np.ndarray) -> None:
+                 y: np.ndarray,
+                 *,
+                 min_y: np.number = None,
+                 max_y: np.number = None) -> None:
 
         assert len(x.shape) == 1
         assert len(y.shape) == 1
@@ -22,8 +25,8 @@ class TimeSeries():
         self.x = x
         self.y = y
 
-        self.min_y = min(self.y)
-        self.max_y = max(self.y)
+        self.min_y = min_y if min_y is not None else min(y)
+        self.max_y = max_y if max_y is not None else max(y)
 
     def add_to_plot(self, ax, *args, **kwargs):
         pass
@@ -80,22 +83,27 @@ class QTimeSeries():
         self.tokens = bin_idx
         self.tokens_y = bin_val
 
-    def get(self, split="None"):
+    def get(self, split="none"):
         m = self.ts.splits_masks[split]
         return self.tokens[m], self.tokens_y[m], self.ts.y[m], self.ts.x[m]
 
-    def length(self, split="None"):
+    def length(self, split="none"):
         return self.ts.splits_len[split]
 
 
 @parse_args(args_prefix="qtz")
 class TimeSeriesQuantizer():
     @typechecked
-    def quantize(self, _time_series: Union[TimeSeries, List[TimeSeries]]) -> Union[QTimeSeries, List[QTimeSeries]]:
+    def quantize(self, 
+                 _time_series: Union[TimeSeries, List[TimeSeries]],
+                 *,
+                 batch: bool = False) -> Union[QTimeSeries, List[QTimeSeries]]:
         if isinstance(_time_series, list):
             time_series = _time_series
         else:
             time_series = [_time_series]
+
+        time_series = self.batch(time_series) if batch else time_series
         
         bin_edges_strided = np.lib.stride_tricks.sliding_window_view(self.bins_edges, 2)
         qts = []
@@ -112,11 +120,22 @@ class TimeSeriesQuantizer():
             #bin_val = self.bins_values@all_bin_assignments
             bin_val = np.take(self.bins_values, bin_idx)
 
-            if type(_time_series) != type([]):
+            if (not isinstance(_time_series, list)) and (not batch):
                 return QTimeSeries(ts, bin_idx, bin_val)
             else:
                 qts.append(QTimeSeries(ts, bin_idx, bin_val))
         return qts
+
+    def batch(self,
+              _time_series: List[TimeSeries]):
+        time_series = []
+        for ts in _time_series:
+            y_batched = np.lib.stride_tricks.sliding_window_view(ts.y, self.window_length)
+            x_batched = np.lib.stride_tricks.sliding_window_view(ts.x, self.window_length)
+            for i in range(y_batched.shape[0]):
+                time_series.append(TimeSeries(y_batched[i], x_batched[i], min_y=np.min(ts.y), max_y=np.max(ts.y)))
+        return time_series
+
 
     def _build(self):
         self.bins_edges = np.linspace(self.l_bound, self.u_bound, self.num_bins+1)
@@ -126,33 +145,16 @@ class TimeSeriesQuantizer():
         #print(self.bins_values)
         #print(self.bins_indices)
 
-@parse_args(args_prefix="btc")
-class TimeSeriesBatcher():
-    @typechecked
-    def batch(self, 
-              _time_series: Union[TimeSeries, List[TimeSeries], QTimeSeries, List[QTimeSeries]]):
-        if isinstance(_time_series, list):
-            _time_series = _time_series
-        else:
-            _time_series = [_time_series]
-
-        #if type(_time_series[0]).__name__ == TimeSeries.__name__:
-        #    _time_series =  TimeSeriesQuantizer().quantize(_time_series)
-        #else:
-        #    _time_series = _time_series
-
-        for ts in _time_series:
-            bin_edges_strided = np.lib.stride_tricks.sliding_window_view(ts.y, self.window_length, )
-
-    def _build(self):
-        pass
 
 if __name__ == '__main__':
     
     x = np.arange(15)
     y = np.arange(15)
     tsq = TimeSeriesQuantizer()
-    qts = tsq.quantize(TimeSeries(x,y))
+    print(tsq.quantize(TimeSeries(x,y)).get())
+    qts = tsq.quantize(TimeSeries(x,y), batch=True)
+    for q in qts:
+        print(q.get())
     #t = qts.get()
     #print(t[0].shape)
     #print(qts.length())
