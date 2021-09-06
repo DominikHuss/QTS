@@ -87,6 +87,7 @@ class QTimeSeries():
     def length(self, split="None"):
         return self.ts.splits_len[split]
 
+
 @parse_args(args_prefix="qtz")
 class TimeSeriesQuantizer():
     @typechecked
@@ -124,6 +125,27 @@ class TimeSeriesQuantizer():
         #print(self.bins_edges)
         #print(self.bins_values)
         #print(self.bins_indices)
+
+@parse_args(args_prefix="btc")
+class TimeSeriesBatcher():
+    @typechecked
+    def batch(self, 
+              _time_series: Union[TimeSeries, List[TimeSeries], QTimeSeries, List[QTimeSeries]]):
+        if isinstance(_time_series, list):
+            _time_series = _time_series
+        else:
+            _time_series = [_time_series]
+
+        #if type(_time_series[0]).__name__ == TimeSeries.__name__:
+        #    _time_series =  TimeSeriesQuantizer().quantize(_time_series)
+        #else:
+        #    _time_series = _time_series
+
+        for ts in _time_series:
+            bin_edges_strided = np.lib.stride_tricks.sliding_window_view(ts.y, self.window_length, )
+
+    def _build(self):
+        pass
 
 if __name__ == '__main__':
     

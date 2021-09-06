@@ -49,6 +49,7 @@ class ArgumentHandler():
 def _parse_arguments():
     parser = ArgumentParser()
     parser.add_argument("--cuda", action="store_true")
+    parser.add_argument("--SMOKE-TEST", action="store_true")
     parser.add_argument("--qtz-l-bound", type=float, default=0.0)
     parser.add_argument("--qtz-u-bound", type=float, default=1.0)
     parser.add_argument("--qtz-num-bins", type=int, default=10)
