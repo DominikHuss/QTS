@@ -104,7 +104,7 @@ class TransformerModel(nn.Module, QModel):
     def save(self, *args, **kwargs):
         return True
 
-    def generate(self, time_series: TensorType, horizon=12) -> TensorType:
+    def generate(self, time_series: TensorType, horizon=50) -> TensorType:
         if len(time_series.shape) == 2:
             pass
         elif len(time_series.shape) == 1:
@@ -182,13 +182,14 @@ class QModelContainer():
 
 if __name__ == "__main__":
     import numpy as np
-    x = np.arange(15)
-    y = np.arange(15)
+    x = np.arange(20)
+    y = np.sin(np.arange(20))+2
+
     ts = TimeSeries(x,y)
     qds = QDataset(ts, batch=True)
 
     trans = TransformerModel()
     qmc = QModelContainer(trans)
-
+    
     qmc.train(qds)
     print(torch.tensor(QDataset(ts, batch=False).raw_data[0].tokens))

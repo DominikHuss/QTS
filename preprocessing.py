@@ -104,7 +104,7 @@ class TimeSeriesQuantizer():
             time_series = [_time_series]
 
         time_series = self.batch(time_series) if batch else time_series
-        
+
         bin_edges_strided = np.lib.stride_tricks.sliding_window_view(self.bins_edges, 2)
         qts = []
         for ts in time_series:
@@ -133,7 +133,7 @@ class TimeSeriesQuantizer():
             y_batched = np.lib.stride_tricks.sliding_window_view(ts.y, self.window_length)
             x_batched = np.lib.stride_tricks.sliding_window_view(ts.x, self.window_length)
             for i in range(y_batched.shape[0]):
-                time_series.append(TimeSeries(y_batched[i], x_batched[i], min_y=np.min(ts.y), max_y=np.max(ts.y)))
+                time_series.append(TimeSeries(x_batched[i], y_batched[i], min_y=np.min(ts.y), max_y=np.max(ts.y)))
         return time_series
 
 
