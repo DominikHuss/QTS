@@ -46,6 +46,7 @@ class ArgumentHandler():
     def __new__(cls, *args, **kwargs):
         raise TypeError("abstract class may not be instantiated")
 
+# TODO: validate args; compute dependent arguments e.g. ngram_num_embedding = qtz_num_bins + qtz_num_special_bins, smoke_test and num_epochs
 def _parse_arguments():
     parser = ArgumentParser()
     parser.add_argument("--cuda", action="store_true")
@@ -59,7 +60,18 @@ def _parse_arguments():
     parser.add_argument("--qtz-window-length", type=int, default=4)
     parser.add_argument("--ts-train-split", type=float, default=0.7)
     parser.add_argument("--ts-eval-split", type=float, default=0.15)
-    parser.add_argument("--qds-num-last-unmasked", type=int, default=0)
+    parser.add_argument("--qds-num-last-unmasked", type=int, default=1)
     parser.add_argument("--qds-objective", choices=["ar", "mlm"], default="ar")
+    parser.add_argument("--trans-num-embedding", type=int, default=13)
+    parser.add_argument("--trans-att-num-heads", type=int, default=2)
+    parser.add_argument("--trans-att-feedforward-dim", type=int, default=64)
+    parser.add_argument("--trans-dropout", type=float, default=0.1)
+    parser.add_argument("--trans-att-num-layers", type=int, default=2)
+    parser.add_argument("--trans-embedding-dim", type=int, default=16)
+    parser.add_argument("--trans-lr", type=float, default=1e-3)
+    parser.add_argument("--trans-weight-decay", type=float, default=1e-5)
+    parser.add_argument("--qmc-num-epochs", type=int, default=100)
+    parser.add_argument("--qmc-batch-size", type=int, default=4)
+    parser.add_argument("--qmc-shuffle", type=bool, default=False)
     args = parser.parse_args()
     ArgumentHandler.set_args(args)

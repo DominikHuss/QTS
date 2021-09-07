@@ -40,7 +40,7 @@ class QDataset(Dataset):
         y_hat = self.data[idx]["y_hat"]
         mask = self.data[idx]["mask"]
         qts_idx = torch.tensor([idx])
-        return y, y_hat, mask, qts_idx 
+        return {"y": y, "y_hat": y_hat, "mask": mask, "idx": qts_idx} 
 
     def _get_y(self, idx):
         tokens, _, _, _ = self.raw_data[idx].get(self.split)
@@ -65,7 +65,6 @@ class QDataset(Dataset):
         self.data = {idx: {"y": self._get_y(idx),
                            "y_hat": self._get_y_hat(idx),
                            "mask": self._get_mask(idx)} for idx in range(len(self.raw_data))}
-        print(self.data)
 
 if __name__ == "__main__":
     import numpy as np
@@ -73,11 +72,11 @@ if __name__ == "__main__":
     y = np.arange(15)
     ts = TimeSeries(x,y)
     qds = QDataset(ts, batch=True)
-    y, y_hat, mask, i = qds[0]
-    print(y.shape)
-    print(y_hat.shape)
-    print(mask.shape)
-    print(i.shape)
+    out = qds[0]
+    print(out["y"].shape)
+    print(out["y_hat"].shape)
+    print(out["mask"].shape)
+    print(out["i"].shape)
     dl = DataLoader(qds, batch_size=4, shuffle=False)
     for b in dl:
         print(b)
