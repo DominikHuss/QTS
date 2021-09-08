@@ -26,6 +26,7 @@ class QDataset(Dataset):
             _data_list = [_data]
 
         if type(_data_list[0]).__name__ == TimeSeries.__name__:
+            _data_list = [TimeSeries(*d.get(split), min_y=d.min_y, max_y=d.max_y) for d in _data_list]
             self.raw_data =  TimeSeriesQuantizer().quantize(_data_list, batch=batch)
         else:
             self.raw_data = _data_list
@@ -43,17 +44,17 @@ class QDataset(Dataset):
         return {"y": y, "y_hat": y_hat, "mask": mask, "idx": qts_idx} 
 
     def _get_y(self, idx):
-        tokens, _, _, _ = self.raw_data[idx].get(self.split)
+        tokens, _, _, _ = self.raw_data[idx].get(self.split if self.inner_split else "none")
         tokens = tokens[:-1] if self.objective == "ar" else tokens
         return torch.from_numpy(tokens)
 
     def _get_y_hat(self, idx):
-        tokens, _, _, _ = self.raw_data[idx].get(self.split)
+        tokens, _, _, _ = self.raw_data[idx].get(self.split if self.inner_split else "none")
         tokens = tokens[1:] if self.objective == "ar" else tokens
         return torch.from_numpy(tokens)
 
     def _get_mask(self, idx):
-        l = self.raw_data[idx].length(self.split) - 1
+        l = self.raw_data[idx].length(self.split if self.inner_split else "none") - 1
         mask = torch.zeros((l), dtype=torch.bool)
         if self.objective == "ar":
             mask[-self.num_last_unmasked:] = 1

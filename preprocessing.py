@@ -25,8 +25,8 @@ class TimeSeries():
         self.x = x
         self.y = y
 
-        self.min_y = min_y if min_y is not None else min(y)
-        self.max_y = max_y if max_y is not None else max(y)
+        self.min_y = min_y if min_y is not None else np.min(y)
+        self.max_y = max_y if max_y is not None else np.max(y)
 
     def add_to_plot(self, ax, *args, **kwargs):
         pass
@@ -34,17 +34,24 @@ class TimeSeries():
     def normalize(self):
         return (self.y-self.min_y)/self.max_y
 
+    def get(self, split="none"):
+        m = self.splits_masks[split]
+        return self.x[m], self.y[m]
+
     def _build(self):
         train_mask = np.zeros_like(self.y, dtype=bool)
         eval_mask = np.zeros_like(self.y, dtype=bool)
         test_mask = np.zeros_like(self.y, dtype=bool)
         none_mask = np.zeros_like(self.y, dtype=bool)
         train_split = int(self.train_split*len(train_mask))
-        eval_split = int(self.eval_split*len(eval_mask))
+        eval_split = int(self.eval_split*len(eval_mask)) + train_split
 
         train_mask[:train_split] = 1
-        eval_mask[train_split:train_split+eval_split] = 1
-        test_mask[train_split+eval_split:] = 1
+        if self.train_split + self.eval_split != 1:
+            eval_mask[train_split:eval_split] = 1
+            test_mask[eval_split:] = 1
+        else:
+            eval_mask[train_split:] = 1
         none_mask[:] = 1
         self.splits_masks = {"train": train_mask,
                              "eval": eval_mask,
@@ -56,7 +63,7 @@ class TimeSeries():
                            "none": np.sum(none_mask)}
         self.splits_starts = {"train": 0,
                               "eval": train_split,
-                              "test": train_split+eval_split,
+                              "test": eval_split,
                               "none": 0}
         #print(self.splits_masks)
         #print(self.splits_starts)
@@ -85,7 +92,7 @@ class QTimeSeries():
 
     def get(self, split="none"):
         m = self.ts.splits_masks[split]
-        return self.tokens[m], self.tokens_y[m], self.ts.y[m], self.ts.x[m]
+        return self.tokens[m], self.tokens_y[m], self.ts.x[m], self.ts.y[m]
 
     def length(self, split="none"):
         return self.ts.splits_len[split]
@@ -109,7 +116,7 @@ class TimeSeriesQuantizer():
         qts = []
         for ts in time_series:
             y = ts.normalize()
-
+            #print(y)
             bin_assignments = np.logical_and(y>bin_edges_strided[:, 0][np.newaxis, :].T, 
                                              y<=bin_edges_strided[:, 1][np.newaxis, :].T)
             zero_bin_assignments = (y==0)[np.newaxis, :]
@@ -123,6 +130,7 @@ class TimeSeriesQuantizer():
             if (not isinstance(_time_series, list)) and (not batch):
                 return QTimeSeries(ts, bin_idx, bin_val)
             else:
+                #print(bin_idx)
                 qts.append(QTimeSeries(ts, bin_idx, bin_val))
         return qts
 
@@ -132,8 +140,9 @@ class TimeSeriesQuantizer():
         for ts in _time_series:
             y_batched = np.lib.stride_tricks.sliding_window_view(ts.y, self.window_length)
             x_batched = np.lib.stride_tricks.sliding_window_view(ts.x, self.window_length)
+            #print(y_batched)
             for i in range(y_batched.shape[0]):
-                time_series.append(TimeSeries(x_batched[i], y_batched[i], min_y=np.min(ts.y), max_y=np.max(ts.y)))
+                time_series.append(TimeSeries(x_batched[i], y_batched[i], min_y=ts.min_y, max_y=ts.max_y))
         return time_series
 
 
