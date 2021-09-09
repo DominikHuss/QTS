@@ -71,7 +71,7 @@ class TransformerModel(nn.Module, QModel):
         epoch_loss = 0
         self.train()
         for batch in train_dataloader:
-            print(batch)
+            #print(batch)
             self.optimizer.zero_grad()
             y_hat = self.forward(batch["y"])
 
@@ -108,7 +108,8 @@ class TransformerModel(nn.Module, QModel):
     def evaluate(self, 
                  eval_dataloader: DataLoader,
                  *,
-                 epoch: int = -1):
+                 epoch: int = -1,
+                 _dataset: str = "EVAL"):
         self.eval()
         eval_loss = 0
         for batch in eval_dataloader:
@@ -118,9 +119,9 @@ class TransformerModel(nn.Module, QModel):
             loss = self.criterion(pred, true)
             eval_loss += loss
         if epoch >= 0:
-            print(f"EVAL -- Epoch {epoch}: Loss = {eval_loss}")
+            print(f"{_dataset} -- Epoch {epoch}: Loss = {eval_loss}")
         else:
-            print(f"EVAL -- Loss = {eval_loss}")
+            print(f"{_dataset} -- Loss = {eval_loss}")
 
     def load(self, *args, **kwargs):
         return True
@@ -206,9 +207,15 @@ class QModelContainer():
         self.model.was_trained = True
 
     @typechecked
+    def test(self,
+             test_dataset: QDataset):
+        test_dataloader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=self.shuffle)
+        self.model.evaluate(test_dataloader, _dataset="TEST")
+
+    @typechecked
     def generate(self,
                  y: Union[TensorType[-1], TensorType[-1, -1]],
-                 stochastic: bool = False):
+                 stochastic: bool = False) -> Union[TensorType[-1], TensorType[-1, -1]]:
         if not self.model.was_trained:
             warnings.warn("The model was not trained, or was reset!")
         y_hat = self.model.generate(y, stochastic=stochastic)
@@ -221,7 +228,7 @@ class QModelContainer():
 if __name__ == "__main__":
     import numpy as np
     x = np.arange(30)
-    y = np.sin(np.arange(30))+2
+    y = np.sin(np.arange(30))
     #print(y)
 
     ts = TimeSeries(x,y)
@@ -229,7 +236,7 @@ if __name__ == "__main__":
     train_qds = QDataset(ts, split="train", batch=True)
     #eval_qds = QDataset(ts, split="eval", batch=True)
     #test_qds = QDataset(ts, split="test", batch=True)
-
+    #exit()
     trans = TransformerModel()
     qmc = QModelContainer(trans)
     

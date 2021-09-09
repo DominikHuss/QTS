@@ -32,7 +32,7 @@ class TimeSeries():
         pass
 
     def normalize(self):
-        return (self.y-self.min_y)/self.max_y
+        return (self.y-self.min_y)/(self.max_y-self.min_y)
 
     def get(self, split="none"):
         m = self.splits_masks[split]
