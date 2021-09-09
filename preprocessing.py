@@ -4,7 +4,7 @@ from decorators import parse_args
 
 import numpy as np
 
-from typing import Union, Iterable, List
+from typing import Union, Iterable, List, Any
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
 patch_typeguard()
@@ -15,6 +15,7 @@ class TimeSeries():
     def __init__(self, 
                  x: np.ndarray, 
                  y: np.ndarray,
+                 id: str,
                  *,
                  min_y: np.number = None,
                  max_y: np.number = None) -> None:
@@ -24,12 +25,17 @@ class TimeSeries():
 
         self.x = x
         self.y = y
+        self._id = id
 
         self.min_y = min_y if min_y is not None else np.min(y)
         self.max_y = max_y if max_y is not None else np.max(y)
 
     def add_to_plot(self, ax, *args, **kwargs):
         pass
+
+    @typechecked
+    def id(self) -> str:
+        return self._id
 
     def normalize(self):
         return (self.y-self.min_y)/(self.max_y-self.min_y)
@@ -97,6 +103,10 @@ class QTimeSeries():
     def length(self, split="none"):
         return self.ts.splits_len[split]
 
+    @typechecked
+    def id(self) -> str:
+        return self.ts.id()
+
 
 @parse_args(args_prefix="qtz")
 class TimeSeriesQuantizer():
@@ -142,7 +152,7 @@ class TimeSeriesQuantizer():
             x_batched = np.lib.stride_tricks.sliding_window_view(ts.x, self.window_length)
             #print(y_batched)
             for i in range(y_batched.shape[0]):
-                time_series.append(TimeSeries(x_batched[i], y_batched[i], min_y=ts.min_y, max_y=ts.max_y))
+                time_series.append(TimeSeries(x_batched[i], y_batched[i], id=ts._id, min_y=ts.min_y, max_y=ts.max_y))
         return time_series
 
 

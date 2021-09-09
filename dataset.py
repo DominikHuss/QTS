@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
-from typing import Union, Iterable, List, Literal
+from typing import Tuple, Union, Iterable, List, Literal
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
 patch_typeguard()
@@ -26,12 +26,31 @@ class QDataset(Dataset):
             _data_list = [_data]
 
         if type(_data_list[0]).__name__ == TimeSeries.__name__:
-            _data_list = [TimeSeries(*d.get(split), min_y=d.min_y, max_y=d.max_y) for d in _data_list]
+            _data_list = [TimeSeries(*d.get(split), id=d._id, min_y=d.min_y, max_y=d.max_y) for d in _data_list]
             self.raw_data =  TimeSeriesQuantizer().quantize(_data_list, batch=batch)
         else:
             self.raw_data = _data_list
 
         self.split = split
+
+    @typechecked
+    def get(self,
+            id: str) -> Tuple[Tuple[QTimeSeries, TensorType[-1]], int, int]:
+        length = 0
+        start = -1
+        qts = None
+        for i in range(len(self.raw_data)):
+            if self.raw_data[i].id() == id:
+                length += 1
+                if start == -1:
+                    start = i
+                    qts = self.raw_data[i]
+                    prepped_y = self.data[i]["y"]
+            else:
+                if start != -1:
+                    break
+        return (qts, prepped_y), start, length
+            
 
     def __len__(self):
         return len(self.data)

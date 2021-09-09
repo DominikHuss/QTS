@@ -60,7 +60,7 @@ def _parse_arguments():
     parser.add_argument("--qtz-window-length", type=int, default=4)
     parser.add_argument("--ts-train-split", type=float, default=0.7)
     parser.add_argument("--ts-eval-split", type=float, default=0.15)
-    parser.add_argument("--qds-num-last-unmasked", type=int, default=1)
+    parser.add_argument("--qds-num-last-unmasked", type=int, default=1) # values different than 1 break the training loop (needs ugly reshapes)
     parser.add_argument("--qds-objective", choices=["ar", "mlm"], default="ar")
     parser.add_argument("--qds-inner-split", action="store_true")
     parser.add_argument("--trans-num-embedding", type=int, default=13)
@@ -75,5 +75,7 @@ def _parse_arguments():
     parser.add_argument("--qmc-batch-size", type=int, default=4)
     parser.add_argument("--qmc-shuffle", type=bool, default=False)
     parser.add_argument("--qmc-eval-epoch", type=int, default=10)
+    parser.add_argument("--qmc-window-length", type=int, default=4) # assert equals to qtz
+    parser.add_argument("--qmc-num-last-unmasked", type=int, default=1) # assert equals to qds
     args = parser.parse_args()
     ArgumentHandler.set_args(args)

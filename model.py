@@ -186,9 +186,12 @@ class TransformerModel(nn.Module, QModel):
 
 @parse_args(args_prefix="qmc")
 class QModelContainer():
-    def __init__(self, model: QModel):
+    def __init__(self, 
+                 model: QModel,
+                 quantizer: TimeSeriesQuantizer):
         super().__init__()
         self.model = model
+        self.quantizer = quantizer
 
     @typechecked
     def train(self,
@@ -214,12 +217,45 @@ class QModelContainer():
 
     @typechecked
     def generate(self,
-                 y: Union[TensorType[-1], TensorType[-1, -1]],
-                 stochastic: bool = False) -> Union[TensorType[-1], TensorType[-1, -1]]:
+                 y: Union[QDataset, QTimeSeries, TensorType[-1], TensorType[-1, -1]],
+                 *,
+                 window_length: int = None,
+                 stochastic: bool = False,
+                 id: str = None) -> Union[QTimeSeries, TensorType[-1], TensorType[-1, -1]]:
         if not self.model.was_trained:
             warnings.warn("The model was not trained, or was reset!")
-        y_hat = self.model.generate(y, stochastic=stochastic)
-        return y_hat
+
+        if window_length is None:
+            window_length = self.window_length - self.num_last_unmasked
+
+
+        if isinstance(y, torch.Tensor):
+            if y.shape[-1] < window_length:
+                raise Exception("When using a torch.Tensor as an input make sure that it is of sufficient length w.r.t. window length!")
+            _y = y[:window_length]
+        elif type(y).__name__ == QTimeSeries.__name__:
+            if y.tokens.shape[-1] < window_length:
+                raise Exception("When using a QTimeSeries as an input make sure that it is of sufficient length w.r.t. window length!")
+            qts = y
+            _y = torch.tensor(y.tokens)
+            _y = _y[:window_length]
+        elif type(y).__name__ == QDataset.__name__:
+            if id is None:
+                raise Exception("When used with a QDataset id parameter must be set!")
+            (qts, _y), _, _ = y.get(id)
+
+        y_hat = self.model.generate(_y, stochastic=stochastic)
+
+        if isinstance(y, torch.Tensor):
+            return y_hat
+        
+        # TODO: return QTimeSeries
+        qts.tokens_y = torch.take(torch.from_numpy(self.quantizer.bins_values), y_hat).numpy()
+        qts.tokens = y_hat.numpy()
+        print(qts.tokens)
+        print(qts.tokens_y)
+        return qts
+
 
     def _build(self):
         pass
@@ -231,17 +267,27 @@ if __name__ == "__main__":
     y = np.sin(np.arange(30))
     #print(y)
 
-    ts = TimeSeries(x,y)
+    ts = TimeSeries(x,y, id="sin")
     #train_qds = QDataset(ts, batch=True)
     train_qds = QDataset(ts, split="train", batch=True)
-    #eval_qds = QDataset(ts, split="eval", batch=True)
+    eval_qds = QDataset(ts, split="eval", batch=True)
     #test_qds = QDataset(ts, split="test", batch=True)
     #exit()
     trans = TransformerModel()
-    qmc = QModelContainer(trans)
+    quant = TimeSeriesQuantizer()
+    qmc = QModelContainer(trans, quant)
     
-    qmc.train(train_qds)
+    qmc.train(train_qds, eval_qds)
+    print(qmc.generate(train_qds, id="sin"))
+    print(qmc.generate(train_qds.raw_data[0]))
     print(qmc.generate(train_qds[0]["y"]))
+    print(qmc.generate(torch.tensor([5,9,9])))
+    print(qmc.generate(torch.tensor([[5,9,9]])))
+
+    print(qmc.generate(QDataset(ts)[0]["y"], window_length=7))
     print(torch.tensor(QDataset(ts, split="train", batch=False).raw_data[0].tokens))
     print(torch.tensor(QDataset(ts, batch=False).raw_data[0].tokens))
+    #print("--------")
+    #for _ in range(3):
+    #    print(qmc.generate(train_qds[0]["y"], stochastic=True))
     #print(y)
