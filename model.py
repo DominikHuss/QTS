@@ -247,6 +247,7 @@ class QModelContainer():
             if _y is None:
                 warnings.warn("Nothing was generated.")
                 return None
+            _y = _y[:window_length]
         y_hat = self.model.generate(_y, horizon=horizon, stochastic=stochastic)
 
         if isinstance(y, torch.Tensor):
