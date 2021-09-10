@@ -1,3 +1,4 @@
+import warnings
 from preprocessing import TimeSeriesQuantizer, TimeSeries, QTimeSeries
 from decorators import parse_args
 
@@ -6,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
-from typing import Tuple, Union, Iterable, List, Literal
+from typing import Tuple, Union, Iterable, List, Literal, Optional
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
 patch_typeguard()
@@ -27,18 +28,46 @@ class QDataset(Dataset):
 
         if type(_data_list[0]).__name__ == TimeSeries.__name__:
             _data_list = [TimeSeries(*d.get(split), id=d._id, min_y=d.min_y, max_y=d.max_y) for d in _data_list]
+            self.raw_unbatched_data = _data_list
             self.raw_data =  TimeSeriesQuantizer().quantize(_data_list, batch=batch)
         else:
+            self.raw_unbatched_data = None
             self.raw_data = _data_list
 
         self.split = split
+        self.batch = batch
+
+    def get_unbatched(self,
+                      id: str,
+                      *,
+                      _quantized: bool = False) -> Optional[TimeSeries]:
+        if self.raw_unbatched_data is None:
+            warnings.warn("Initializing a QDataset with QTimeSeries holds not enough information to dissambiguate whether data are batched already. Returning None")
+            return None
+
+        if _quantized and not self.batch:
+            ts_data = self.raw_data
+        elif _quantized and self.batch:
+            warnings.warn("Requested quantized unbatched data, but instance was initialized with batch=True. Returning None")
+            return None
+        else:
+            ts_data = self.raw_unbatched_data
+
+        for ts in ts_data:
+            if ts.id() == id:
+                return ts
+        warnings.warn(f"TimeSeries with id={id} was not found in the QDataset. Returning None")
+        return None
+
+
 
     @typechecked
     def get(self,
-            id: str) -> Tuple[Tuple[QTimeSeries, TensorType[-1]], int, int]:
+            id: str) -> Tuple[Tuple[Optional[QTimeSeries], Optional[TensorType[-1]]], int, int]:
         length = 0
         start = -1
         qts = None
+        prepped_y = None
         for i in range(len(self.raw_data)):
             if self.raw_data[i].id() == id:
                 length += 1
@@ -49,6 +78,8 @@ class QDataset(Dataset):
             else:
                 if start != -1:
                     break
+        if prepped_y is None:
+            warnings.warn(f"No mini-batches of a QTimeSeries with matching id='{id}' were found in the QDataset! Returning None")
         return (qts, prepped_y), start, length
             
 

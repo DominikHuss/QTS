@@ -57,7 +57,7 @@ def _parse_arguments():
     parser.add_argument("--qtz-num-special-bins", type=int, default=3)
     parser.add_argument("--qtz-l-value", type=int, default=-1)
     parser.add_argument("--qtz-u-value", type=int, default=2)
-    parser.add_argument("--qtz-window-length", type=int, default=4)
+    parser.add_argument("--qtz-window-length", type=int, default=8)
     parser.add_argument("--ts-train-split", type=float, default=0.7)
     parser.add_argument("--ts-eval-split", type=float, default=0.15)
     parser.add_argument("--qds-num-last-unmasked", type=int, default=1) # values different than 1 break the training loop (needs ugly reshapes)
@@ -72,10 +72,10 @@ def _parse_arguments():
     parser.add_argument("--trans-lr", type=float, default=1e-3)
     parser.add_argument("--trans-weight-decay", type=float, default=1e-5)
     parser.add_argument("--qmc-num-epochs", type=int, default=200)
-    parser.add_argument("--qmc-batch-size", type=int, default=4)
+    parser.add_argument("--qmc-batch-size", type=int, default=10)
     parser.add_argument("--qmc-shuffle", type=bool, default=False)
-    parser.add_argument("--qmc-eval-epoch", type=int, default=10)
-    parser.add_argument("--qmc-window-length", type=int, default=4) # assert equals to qtz
+    parser.add_argument("--qmc-eval-epoch", type=int, default=8)
+    parser.add_argument("--qmc-window-length", type=int, default=8) # assert equals to qtz
     parser.add_argument("--qmc-num-last-unmasked", type=int, default=1) # assert equals to qds
     args = parser.parse_args()
     ArgumentHandler.set_args(args)

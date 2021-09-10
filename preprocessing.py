@@ -3,6 +3,7 @@ from __init__ import *
 from decorators import parse_args
 
 import numpy as np
+from matplotlib.ticker import (AutoMinorLocator, MultipleLocator)
 
 from typing import Union, Iterable, List, Any
 from torchtyping import TensorType, patch_typeguard
@@ -31,7 +32,9 @@ class TimeSeries():
         self.max_y = max_y if max_y is not None else np.max(y)
 
     def add_to_plot(self, ax, *args, **kwargs):
-        pass
+        print(self.x)
+        # TODO: No support for plotting unscaled data
+        ax.plot(self.x, self.normalize(), *args, **kwargs)
 
     @typechecked
     def id(self) -> str:
@@ -39,6 +42,9 @@ class TimeSeries():
 
     def normalize(self):
         return (self.y-self.min_y)/(self.max_y-self.min_y)
+
+    def unnormalize(self, norm_y):
+        return norm_y*(self.max_y-self.min_y) + self.min_y
 
     def get(self, split="none"):
         m = self.splits_masks[split]
@@ -96,6 +102,12 @@ class QTimeSeries():
         self.tokens = bin_idx
         self.tokens_y = bin_val
 
+    def unnormalize(self):
+        return self.ts.unnormalize(self.tokens_y)
+
+    def add_to_plot(self, ax, *args, **kwargs):
+        ax.plot(range(self.ts.x[0], self.ts.x[0]+self.tokens_y.shape[0]), self.tokens_y, marker="|", ms=9, mew=2, mfc="black", mec="black", ls="--", lw=0.5, c="black", **kwargs)
+
     def get(self, split="none"):
         m = self.ts.splits_masks[split]
         return self.tokens[m], self.tokens_y[m], self.ts.x[m], self.ts.y[m]
@@ -144,8 +156,9 @@ class TimeSeriesQuantizer():
                 qts.append(QTimeSeries(ts, bin_idx, bin_val))
         return qts
 
+    @typechecked
     def batch(self,
-              _time_series: List[TimeSeries]):
+              _time_series: List[TimeSeries]) -> List[TimeSeries]:
         time_series = []
         for ts in _time_series:
             y_batched = np.lib.stride_tricks.sliding_window_view(ts.y, self.window_length)
