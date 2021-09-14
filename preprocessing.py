@@ -46,6 +46,9 @@ class TimeSeries():
     def unnormalize(self, norm_y):
         return norm_y*(self.max_y-self.min_y) + self.min_y
 
+    def length(self, split="none"):
+        return self.splits_len[split]
+
     def get(self, split="none"):
         m = self.splits_masks[split]
         return self.x[m], self.y[m]

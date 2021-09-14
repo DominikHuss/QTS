@@ -1,7 +1,18 @@
 from typing import Dict
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
+import warnings
 
 import torch
+
+def validate_args(args: Namespace) -> Namespace:
+    args.ngram_num_embedding = args.qtz_num_bins + args.qtz_num_special_bins
+    args.qmc_window_length = args.qtz_window_length
+    args.qmc_num_last_unmasked = args.qds_num_last_unmasked
+
+    if args.SMOKE_TEST:
+        args.qmc_num_epochs = 1
+
+    return args
 
 class ArgumentHandler():
     args = None
@@ -71,11 +82,14 @@ def _parse_arguments():
     parser.add_argument("--trans-embedding-dim", type=int, default=16)
     parser.add_argument("--trans-lr", type=float, default=1e-3)
     parser.add_argument("--trans-weight-decay", type=float, default=1e-5)
-    parser.add_argument("--qmc-num-epochs", type=int, default=200)
+    parser.add_argument("--qmc-num-epochs", type=int, default=1000)
     parser.add_argument("--qmc-batch-size", type=int, default=10)
     parser.add_argument("--qmc-shuffle", type=bool, default=False)
-    parser.add_argument("--qmc-eval-epoch", type=int, default=8)
+    parser.add_argument("--qmc-eval-epoch", type=int, default=10)
     parser.add_argument("--qmc-window-length", type=int, default=8) # assert equals to qtz
     parser.add_argument("--qmc-num-last-unmasked", type=int, default=1) # assert equals to qds
+    parser.add_argument("--qmc-random-shifts", type=bool, default=True)
+    parser.add_argument("--qmc-soft-labels", type=bool, default=True)
     args = parser.parse_args()
+    args = validate_args(args)
     ArgumentHandler.set_args(args)

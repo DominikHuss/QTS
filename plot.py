@@ -19,6 +19,8 @@ class Plotter():
                  quantizer: TimeSeriesQuantizer,
                  save_location: str,
                  *,
+                 _x_major_ticks: int = 10,
+                 _x_minor_ticks: int = 1,
                  _unscale: bool = False) -> None:
         # TODO: No support for plotting unscaled data
         if _unscale:
@@ -31,14 +33,14 @@ class Plotter():
         self.num_axis = 1
 
         self.fig, self.ax = plt.subplots(self.num_axis, dpi=800)
-        self._prepare_grid()
+        self._prepare_grid(_x_major_ticks, _x_minor_ticks)
 
 
-    def _prepare_grid(self):
+    def _prepare_grid(self, x_major, x_minor):
         self.ax.set_ylim(min(self.quantizer.bins_values), max(self.quantizer.bins_values))
 
-        self.ax.xaxis.set_major_locator(MultipleLocator(10))
-        self.ax.xaxis.set_minor_locator(AutoMinorLocator(10))
+        self.ax.xaxis.set_major_locator(MultipleLocator(x_major))
+        self.ax.xaxis.set_minor_locator(AutoMinorLocator(x_major*x_minor))
 
         self.ax.yaxis.set_major_locator(MultipleLocator(1))
         self.ax.yaxis.set_minor_locator(AutoMinorLocator(self.quantizer.num_bins))

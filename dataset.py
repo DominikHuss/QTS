@@ -19,7 +19,9 @@ class QDataset(Dataset):
                  _data: Union[TimeSeries, List[TimeSeries], QTimeSeries, List[QTimeSeries]],
                  split: Literal["train", "eval", "test", "none"] = "none",
                  *,
-                 batch: bool = False) -> None:
+                 batch: bool = False,
+                 soft_labels: bool = False) -> None:
+        self.tsq = TimeSeriesQuantizer()
 
         if isinstance(_data, list):
             _data_list = _data
@@ -36,6 +38,8 @@ class QDataset(Dataset):
 
         self.split = split
         self.batch = batch
+        self.soft_labels = soft_labels
+        self.random_shifts = False
 
     def get_unbatched(self,
                       id: str,
@@ -62,8 +66,8 @@ class QDataset(Dataset):
 
 
     @typechecked
-    def get(self,
-            id: str) -> Tuple[Tuple[Optional[QTimeSeries], Optional[TensorType[-1]]], int, int]:
+    def get_batched(self,
+                    id: str) -> Tuple[Tuple[Optional[QTimeSeries], Optional[TensorType[-1]]], int, int]:
         length = 0
         start = -1
         qts = None
@@ -88,10 +92,19 @@ class QDataset(Dataset):
 
     def __getitem__(self, idx):
         y = self.data[idx]["y"]
+        if self.random_shifts:
+            shifts_idx = torch.tensor([0.1, 0.8, 0.1]).multinomial(num_samples=y.shape[0], replacement=True)
+            shifts = torch.tensor([-1, 0, 1])[shifts_idx]
+            specials_mask = y>=self.tsq.num_bins
+            y = F.relu(y+~specials_mask*shifts)
+            specials_mask_check = y>=self.tsq.num_bins
+            y[torch.logical_xor(specials_mask, specials_mask_check)] -= 1
+
         y_hat = self.data[idx]["y_hat"]
+        y_hat_probs = self.data[idx]["y_hat_probs"]
         mask = self.data[idx]["mask"]
         qts_idx = torch.tensor([idx])
-        return {"y": y, "y_hat": y_hat, "mask": mask, "idx": qts_idx} 
+        return {"y": y, "y_hat": y_hat, "y_hat_probs": y_hat_probs, "mask": mask, "idx": qts_idx} 
 
     def _get_y(self, idx):
         tokens, _, _, _ = self.raw_data[idx].get(self.split if self.inner_split else "none")
@@ -102,6 +115,27 @@ class QDataset(Dataset):
         tokens, _, _, _ = self.raw_data[idx].get(self.split if self.inner_split else "none")
         tokens = tokens[1:] if self.objective == "ar" else tokens
         return torch.from_numpy(tokens)
+
+    def _get_y_hat_probs(self, idx):
+        tokens = self._get_y_hat(idx)
+        tsq = TimeSeriesQuantizer()
+        num_all_bins = tsq.bins_indices.shape[0]
+        num_bins = tsq.num_bins
+        #num_special_bins = tsq.num_special_bins
+
+        num_tokens = tokens.shape[0]
+
+        t = torch.zeros((num_tokens, num_all_bins)).scatter(-1, tokens.unsqueeze(-1), 1)
+        normal_t = t[...,:num_bins]
+        special_t = t[...,num_bins:]
+
+        kernel = torch.tensor([[[0.05, 0.1, 1, 0.1, 0.05]]]).repeat(num_tokens, 1, 1)
+
+        if self.soft_labels:
+            normal_t = F.conv1d(normal_t.unsqueeze(0), kernel, groups=num_tokens, padding="same")
+            t = torch.cat((normal_t.squeeze(0), special_t), dim=-1)
+            t = t/t.sum(dim=-1, keepdim=True)
+        return t
 
     def _get_mask(self, idx):
         l = self.raw_data[idx].length(self.split if self.inner_split else "none") - 1
@@ -115,14 +149,19 @@ class QDataset(Dataset):
     def _build(self):
         self.data = {idx: {"y": self._get_y(idx),
                            "y_hat": self._get_y_hat(idx),
-                           "mask": self._get_mask(idx)} for idx in range(len(self.raw_data))}
+                           "mask": self._get_mask(idx),
+                           "y_hat_probs": self._get_y_hat_probs(idx)} for idx in range(len(self.raw_data))}
 
 if __name__ == "__main__":
     import numpy as np
     x = np.arange(15)
     y = np.arange(15)
-    ts = TimeSeries(x,y)
-    qds = QDataset(ts, batch=True)
+    ts = TimeSeries(x,y, id="test")
+    qds = QDataset(ts, batch=True, soft_labels=False)
+    qds.random_shifts = True
+    for i in range(1):
+        qds[i]
+    exit()
     out = qds[0]
     print(out["y"].shape)
     print(out["y_hat"].shape)
