@@ -4,6 +4,9 @@ import warnings
 
 import torch
 
+import os
+import json
+
 def validate_args(args: Namespace) -> Namespace:
     args.ngram_num_embedding = args.qtz_num_bins + args.qtz_num_special_bins
     args.qmc_window_length = args.qtz_window_length
@@ -12,6 +15,16 @@ def validate_args(args: Namespace) -> Namespace:
     if args.SMOKE_TEST:
         args.qmc_num_epochs = 1
 
+    return args
+
+def save_args(args: Namespace,
+              path: str) -> None:
+    with open(os.path.join(path, 'params.json'), 'w') as f:
+        json.dump(vars(args), f)
+
+def load_args(path: str) -> Namespace:
+    with open(os.path.join(path, 'params.json')) as f:
+        args = Namespace(**json.load(f))
     return args
 
 class ArgumentHandler():
@@ -62,6 +75,7 @@ def _parse_arguments():
     parser = ArgumentParser()
     parser.add_argument("--cuda", action="store_true")
     parser.add_argument("--SMOKE-TEST", action="store_true")
+    parser.add_argument("--ARGS-FILE", type=str, default=None)
     parser.add_argument("--qtz-l-bound", type=float, default=0.0)
     parser.add_argument("--qtz-u-bound", type=float, default=1.0)
     parser.add_argument("--qtz-num-bins", type=int, default=10)
@@ -78,9 +92,11 @@ def _parse_arguments():
     parser.add_argument("--trans-att-num-heads", type=int, default=2)
     parser.add_argument("--trans-att-feedforward-dim", type=int, default=64)
     parser.add_argument("--trans-dropout", type=float, default=0.1)
+    parser.add_argument("--trans-pos-dropout", type=float, default=0.1)
+    parser.add_argument("--trans-pos-max-len", type=int, default=5000)
     parser.add_argument("--trans-att-num-layers", type=int, default=2)
     parser.add_argument("--trans-embedding-dim", type=int, default=16)
-    parser.add_argument("--trans-lr", type=float, default=1e-3)
+    parser.add_argument("--trans-lr", type=float, default=3e-4)
     parser.add_argument("--trans-weight-decay", type=float, default=1e-5)
     parser.add_argument("--qmc-num-epochs", type=int, default=1000)
     parser.add_argument("--qmc-batch-size", type=int, default=10)
@@ -91,5 +107,8 @@ def _parse_arguments():
     parser.add_argument("--qmc-random-shifts", type=bool, default=True)
     parser.add_argument("--qmc-soft-labels", type=bool, default=True)
     args = parser.parse_args()
+    if args.ARGS_FILE is not None:
+        args = load_args("plots/")
     args = validate_args(args)
+    save_args(args, "plots/")
     ArgumentHandler.set_args(args)

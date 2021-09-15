@@ -1,6 +1,7 @@
 from plot import Plotter
 from dataset import QDataset
 from criterion import SoftCrossEntropyLoss
+from positional_encoding import PositionalEncoding
 from preprocessing import TimeSeriesQuantizer, TimeSeries, QTimeSeries
 from decorators import parse_args
 
@@ -157,6 +158,7 @@ class TransformerModel(nn.Module, QModel):
         vac = ~torch.tril(torch.ones(y.shape[1], y.shape[1])).type(torch.BoolTensor)
 
         o = self.module["emb"](y)
+        #o = self.module["pos"](o)
         o = self.module["trans"](o, mask=vac)
         o = self.module["out_proj"](o)
         return o
@@ -169,6 +171,9 @@ class TransformerModel(nn.Module, QModel):
     def _build(self):
         embedding = nn.Embedding(self.num_embedding, 
                                  self.embedding_dim*self.att_num_heads)
+        pos = PositionalEncoding(d_model=self.embedding_dim*self.att_num_heads,
+                                 dropout=self.pos_dropout,
+                                 max_len=self.pos_max_len)
         transformer_encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model=self.embedding_dim*self.att_num_heads, 
                                                                                nhead=self.att_num_heads, 
                                                                                dim_feedforward=self.att_feedforward_dim, 
@@ -179,8 +184,9 @@ class TransformerModel(nn.Module, QModel):
         output_proj = nn.Linear(in_features=self.embedding_dim*self.att_num_heads, 
                                 out_features=self.num_embedding)
         self.module = nn.ModuleDict({"emb": embedding,
-                                      "trans": transformer_encoder,
-                                      "out_proj": output_proj})
+                                     "pos": pos,
+                                     "trans": transformer_encoder,
+                                     "out_proj": output_proj})
         self.optimizer = torch.optim.Adam(self.module.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.criterion = SoftCrossEntropyLoss
         #self.criterion = nn.CrossEntropyLoss()
@@ -274,8 +280,14 @@ class QModelContainer():
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import numpy as np
+
+    trans = TransformerModel()
+    quant = TimeSeriesQuantizer()
+    qmc = QModelContainer(trans, quant)
+    exit()
+
     l=120
-    soft_labels = False
+    soft_labels = qmc.soft_labels
 
     x = np.arange(l)
 
@@ -297,9 +309,6 @@ if __name__ == "__main__":
     print(train_qds.raw_data[0].tokens_y)
     print(train_qds.raw_data[0].unnormalize())
     print(train_qds.raw_data[0].ts.y)
-    trans = TransformerModel()
-    quant = TimeSeriesQuantizer()
-    qmc = QModelContainer(trans, quant)
 
     qmc.train(train_qds, eval_qds)
     if qmc._global_SMOKE_TEST:
