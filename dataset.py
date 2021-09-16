@@ -2,6 +2,8 @@ import warnings
 from preprocessing import TimeSeriesQuantizer, TimeSeries, QTimeSeries
 from decorators import parse_args
 
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,7 +18,7 @@ patch_typeguard()
 class QDataset(Dataset):
     @typechecked
     def __init__(self, 
-                 _data: Union[TimeSeries, List[TimeSeries], QTimeSeries, List[QTimeSeries]],
+                 _data: Union[np.ndarray, List[np.ndarray], TimeSeries, List[TimeSeries], QTimeSeries, List[QTimeSeries]],
                  split: Literal["train", "eval", "test", "none"] = "none",
                  *,
                  batch: bool = False,
@@ -27,6 +29,10 @@ class QDataset(Dataset):
             _data_list = _data
         else:
             _data_list = [_data]
+
+        if isinstance(_data_list[0], np.ndarray):
+            _data_list = [TimeSeries(x=np.arange(len(d)), y=d, id=f"{i}") for i, d in enumerate(_data_list)]
+
 
         if type(_data_list[0]).__name__ == TimeSeries.__name__:
             _data_list = [TimeSeries(*d.get(split), id=d._id, min_y=d.min_y, max_y=d.max_y) for d in _data_list]
@@ -67,13 +73,21 @@ class QDataset(Dataset):
 
     @typechecked
     def get_batched(self,
-                    id: str) -> Tuple[Tuple[Optional[QTimeSeries], Optional[TensorType[-1]]], int, int]:
+                    id: str,
+                    *,
+                    _all=False) -> Union[Tuple[Tuple[Optional[QTimeSeries], 
+                                                     Optional[TensorType[-1]]], 
+                                                     int, 
+                                                     int], 
+                                         QTimeSeries]:
         length = 0
         start = -1
         qts = None
         prepped_y = None
         for i in range(len(self.raw_data)):
             if self.raw_data[i].id() == id:
+                if not _all:
+                    return self.raw_data[i]
                 length += 1
                 if start == -1:
                     start = i

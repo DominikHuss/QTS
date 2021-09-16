@@ -32,7 +32,6 @@ class TimeSeries():
         self.max_y = max_y if max_y is not None else np.max(y)
 
     def add_to_plot(self, ax, *args, **kwargs):
-        print(self.x)
         # TODO: No support for plotting unscaled data
         ax.plot(self.x, self.normalize(), *args, **kwargs)
 

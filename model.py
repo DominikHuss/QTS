@@ -1,4 +1,5 @@
 from plot import Plotter
+from _synthetic_data_generation import random_peaks, random
 from dataset import QDataset
 from criterion import SoftCrossEntropyLoss
 from positional_encoding import PositionalEncoding
@@ -71,6 +72,7 @@ class TransformerModel(nn.Module, QModel):
         epoch_loss = 0
         self.train()
         for batch in train_dataloader:
+            #print(batch)
             self.optimizer.zero_grad()
             y_hat = self.forward(batch["y"])
 
@@ -83,7 +85,7 @@ class TransformerModel(nn.Module, QModel):
             loss.backward()
             self.optimizer.step()
             epoch_loss += loss
-        print(f"Epoch {epoch}: Loss = {epoch_loss}")
+        print(f"Epoch {epoch}: Loss = {epoch_loss/len(train_dataloader)}")
 
     @typechecked
     def predict(self, 
@@ -120,9 +122,9 @@ class TransformerModel(nn.Module, QModel):
             loss = self.criterion(pred, true)
             eval_loss += loss
         if epoch >= 0:
-            print(f"{_dataset} -- Epoch {epoch}: Loss = {eval_loss}")
+            print(f"{_dataset} -- Epoch {epoch}: Loss = {eval_loss/len(eval_dataloader)}")
         else:
-            print(f"{_dataset} -- Loss = {eval_loss}")
+            print(f"{_dataset} -- Loss = {eval_loss/eval_dataloader}")
 
     def load(self, *args, **kwargs):
         return True
@@ -189,7 +191,9 @@ class TransformerModel(nn.Module, QModel):
                                      "out_proj": output_proj})
         self.optimizer = torch.optim.Adam(self.module.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.criterion = SoftCrossEntropyLoss
-        #self.criterion = nn.CrossEntropyLoss()
+        #w = torch.ones(self.num_embedding)
+        #w[-3] = 0.1
+        #self.criterion = nn.CrossEntropyLoss(weight=w)
 
 @parse_args(args_prefix="qmc")
 class QModelContainer():
@@ -228,7 +232,7 @@ class QModelContainer():
     @typechecked
     def generate(self,
                  y: Union[QDataset, QTimeSeries, TensorType[-1], TensorType[-1, -1]],
-                 horizon: int = 150,
+                 horizon: int = None,
                  *,
                  window_length: int = None,
                  stochastic: bool = False,
@@ -244,21 +248,30 @@ class QModelContainer():
             if y.shape[-1] < window_length:
                 warnings.warn("When using a torch.Tensor as an input make sure that it is of sufficient length w.r.t. window length! Nothing was generated, and None was returned!")
                 return None
+            if horizon is None:
+                raise Exception("Horizon not provided when supplying torch.Tensor!")
             _y = y[:window_length]
         elif type(y).__name__ == QTimeSeries.__name__:
             if y.tokens.shape[-1] < window_length:
                 warnings.warn("When using a QTimeSeries as an input make sure that it is of sufficient length w.r.t. window length! Nothing was generated, and None was returned!")
                 return None
+            if horizon is None:
+                raise Exception("Horizon not provided when supplying QTimeSeries!")
             qts = y
             _y = torch.tensor(y.tokens)
             _y = _y[:window_length]
         elif type(y).__name__ == QDataset.__name__:
+
             if id is None:
                 raise Exception("When used with a QDataset id parameter must be set!")
-            (qts, _y), _, _ = y.get_batched(id)
+
+            (qts, _y), _, _ = y.get_batched(id, _all=True)
             if _y is None:
                 warnings.warn("Nothing was generated.")
                 return None
+
+            if horizon is None:
+                horizon = int(y.get_unbatched(id).length()-window_length)
             _y = _y[:window_length]
         y_hat = self.model.generate(_y, horizon=horizon, stochastic=stochastic)
 
@@ -281,18 +294,22 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import numpy as np
 
+    np.random.seed(0)
+
     trans = TransformerModel()
     quant = TimeSeriesQuantizer()
     qmc = QModelContainer(trans, quant)
-    exit()
+    #exit()
 
-    l=120
+    l=300
     soft_labels = qmc.soft_labels
 
     x = np.arange(l)
 
     #y = np.sin(np.arange(l))
-    y = np.concatenate((np.sin(np.arange(l//2)), np.sin(np.arange(l//2, l))-1))
+    #y = np.concatenate((np.sin(np.arange(l//2)), np.sin(np.arange(l//2, l))-1))
+    #y = random(l, 1, 1)
+    y = random_peaks(l, 1, 1, 0.4)
     z = np.cos(np.arange(l))
 
     plot = Plotter(TimeSeriesQuantizer(), "plots/")
@@ -318,15 +335,15 @@ if __name__ == "__main__":
     plot.plot(ts, label="true")
     plot.plot(train_qds.get_unbatched("sin"), label="train")
     plot.plot(QDataset(ts, split="eval", batch=False).raw_data[0].ts, label="eval")
-    plot.plot(qmc.generate(train_qds, id="sin"))
+    plot.plot(qmc.generate(train_qds, id="sin", horizon=int(train_qds.get_unbatched("sin").length()-(qmc.window_length-qmc.num_last_unmasked))))
     plot.save("train.png")
     print(qmc.generate(train_qds, id="cos"))
-    print(qmc.generate(train_qds.raw_data[0]))
-    print(qmc.generate(train_qds[0]["y"]))
+    print(qmc.generate(train_qds.raw_data[0], horizon=150))
+    print(qmc.generate(train_qds[0]["y"], horizon=150))
     #print(qmc.generate(torch.tensor([5,9,9])))
     #print(qmc.generate(torch.tensor([[5,9,9]])))
 
-    print(qmc.generate(QDataset(ts)[0]["y"], window_length=7))
+    print(qmc.generate(QDataset(ts)[0]["y"], window_length=7, horizon=150))
     print(torch.tensor(QDataset(ts, split="train", batch=False).raw_data[0].tokens))
     print(torch.tensor(QDataset(ts, batch=False).raw_data[0].tokens))
     for t in QDataset(ts, batch=False).raw_data:
@@ -336,7 +353,7 @@ if __name__ == "__main__":
     eval_plot.plot(all_qds.get_unbatched("sin"), label="true")
     eval_plot.plot(train_qds.get_unbatched("sin"), label="train")
     eval_plot.plot(eval_qds.get_unbatched("sin"),  label="eval")
-    eval_plot.plot(qmc.generate(eval_qds, id="sin", horizon=int(150-train_qds.get_unbatched("sin").length())))
+    eval_plot.plot(qmc.generate(eval_qds, id="sin", horizon=int(eval_qds.get_unbatched("sin").length()-(qmc.window_length-qmc.num_last_unmasked))))
     eval_plot.save("eval.png")
 
     print("--------")
@@ -344,12 +361,20 @@ if __name__ == "__main__":
     # all
     train_random_plot = Plotter(TimeSeriesQuantizer(), "plots/")
     for _ in range(num_samples):
-        train_random_plot.plot(qmc.generate(train_qds, id="sin", stochastic=True), alpha=1/num_samples)
+        train_random_plot.plot(qmc.generate(train_qds, 
+                                            id="sin", 
+                                            stochastic=True, 
+                                            horizon=int(train_qds.get_unbatched("sin").length()-(qmc.window_length-qmc.num_last_unmasked))), 
+                                            alpha=1/num_samples)
     train_random_plot.save("random_train.png")
     # eval
     eval_random_plot = Plotter(TimeSeriesQuantizer(), "plots/")
     for _ in range(num_samples):
-        eval_random_plot.plot(qmc.generate(eval_qds, id="sin", horizon=int(150-train_qds.get_unbatched("sin").length()), stochastic=True), alpha=1/num_samples)
+        eval_random_plot.plot(qmc.generate(eval_qds, 
+                                           id="sin", 
+                                           horizon=int(eval_qds.get_unbatched("sin").length()-(qmc.window_length-qmc.num_last_unmasked)), 
+                                           stochastic=True), 
+                                           alpha=1/num_samples)
     eval_random_plot.save("random_eval.png")
 
     cos_plot = Plotter(TimeSeriesQuantizer(), "plots/")
