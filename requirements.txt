@@ -5,4 +5,5 @@ typeguard
 matplotlib
 numpy
 pandas
-
+timeseries-generator
+scipy
