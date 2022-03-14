@@ -1,36 +1,19 @@
+import json
 import numpy as np
 import pandas as pd
-from numpy.core.fromnumeric import var
-from timeseries_generator import LinearTrend, Generator, WhiteNoise, HolidayFactor, WeekdayFactor,RandomFeatureFactor,SinusoidalFactor
+from timeseries_generator import LinearTrend, Generator, WhiteNoise, HolidayFactor, WeekdayFactor,SinusoidalFactor, RandomFeatureFactor
+
 
 def generate_univariate_ts(start: str = "01-01-2018",
                         end: str = "01-01-2019",
-                        rand_lt: bool = False,
                         lt_coef:  float = None,
                         lt_offset: float = None,
-                        rand_wn: bool = False, 
                         wn_std: float = None,
-                        rand_holidays: bool = False,
                         holidays: dict = None,
-                        rand_week_days: bool = False,
                         week_days: dict = None,
-                        seed: int = None
+                        sin_config: dict = None
+                     
 ) -> np.array:
-    if seed: np.seed(seed)
-    if rand_lt:
-        lt_coef = np.random.normal()
-        lt_offset = np.random.normal()
-    if rand_wn: wn_std = np.random.normal(scale = 0.005)
-    if rand_holidays: holidays = {
-        "Christmas_day": np.random.normal(10),
-        "Easter Monday": np.random.normal(6),
-        "All Saints' Day": np.random.normal(3)
-    }
-    if rand_week_days: week_days = {4: np.random.normal(1.1),
-                    5: np.random.normal(1.4),
-                    6: np.random.normal(1.2)
-    }
-    
     lt = LinearTrend(coef= lt_coef,
                     offset= lt_offset,
                     col_name="lt_trend"
@@ -42,37 +25,31 @@ def generate_univariate_ts(start: str = "01-01-2018",
     wd = WeekdayFactor(col_name="week",
                     factor_values= week_days 
     )   if week_days else None
-    # rff = RandomFeatureFactor(
-    #     feature_values = ["val1",'val2','val3'],
-    #     feature = "f1",
-    #     min_factor_value = 0.1,
-    #     max_factor_value = 3,
-    #     col_name = "rff"
-    # )
-    sin = SinusoidalFactor(
-        feature="sin_feature",
-        col_name="sin_factor",
-        feature_values={
-            "val_sin1": {
-                "wavelength": 365.,
-                "amplitude": 0.2,
-                "phase": 365/4,
-                "mean": 1.
-            },
-            "val_sin2": {
-                "wavelength": 365.,
-                "amplitude": 0.2,
-                "phase": 0.,
-                "mean": 1.
-            }
-        }
+    rff = RandomFeatureFactor(
+        feature="random_feature",
+        feature_values=["val"],
+        min_factor_value=1,
+        max_factor_value=10
     )
+    sin = SinusoidalFactor(
+            feature="sin_feature",
+            col_name="sin_factor",
+            feature_values={
+                "val_sin1": {
+                    "wavelength": sin_config['wavelength'],
+                    "amplitude": sin_config['amplitude'],
+                    "phase": sin_config['phase'],
+                    "mean": sin_config['mean']
+                }
+            }
+    ) if sin_config  else None
     
     features_dict = {
-        "country": ["Netherlands", "Italy", "Romania"],
-        "sin_feature":  ["val_sin1",'val_sin2']
+        "country": ["Italy"],
+        "sin_feature":  ["val_sin1"],
+        "random_feature": ["val"]
     }
-    factors = [*filter(lambda f: f is not None, [lt,wn,hd,wd])]
+    factors = [*filter(lambda f: f is not None, [lt,wn,rff,sin,hd,wd])]
     generator = Generator(factors={*factors},
                           features= features_dict,
                           date_range=pd.date_range(start=start, end = end))
@@ -96,25 +73,42 @@ if __name__ == "__main__":
     from preprocessing import  TimeSeriesQuantizer
     from dataset import QDataset
     from plot import Plotter
-
-    example_ts = generate_univariate_ts(rand_lt = False,
-                        lt_coef = None,
-                        lt_offset = None,
-                        rand_wn = True, 
-                        wn_std = None,
-                        rand_holidays = True,
-                        holidays = None,
-                        rand_week_days = False,
-                        week_days = None,
-                        seed = None
-    )
-    
-    ds = QDataset(example_ts)
-    plot = Plotter(TimeSeriesQuantizer(), "plots/")
-    
-    qts = ds.get_batched(id="0")
-    ts = ds.get_unbatched(id="0")
-    plot.plot(ts, label="cont.")
-    plot.plot(qts, label="quant.")
-    plot.save("synth.png")
-    print(qts.tokens)
+        
+    for i in range(10):
+        gen_params = {
+            "wn_std": 0.15,
+            "week_days": {0: 0.89,
+                1: 0.92,
+                2: 0.95,
+                3: 0.91,
+                4: 1.11,
+                5: 1.15,
+                6: 1.2
+            },
+            "holidays": {
+                "Christmas_day": np.random.normal(6),
+                "Easter Monday": np.random.normal(6),
+                "All Saints' Day": np.random.normal(6),
+                "International Workers' Day":np.random.normal(6),
+                "Liberation Day":np.random.normal(6)
+            },
+            "sin_config": {"wavelength": 366,
+                    "amplitude": 0.2,
+                    "phase": 0,
+                    "mean": 0.5
+            }
+        }
+        with open(f"./data/synthetic/synthetic_params{i}.json","w") as fp:
+            json.dump(gen_params,fp)
+        
+        example_ts = generate_univariate_ts(**gen_params)
+        np.savetxt(f"./data/synthetic/synthetic{i}.csv", example_ts, delimiter=",")
+        
+        ds = QDataset(example_ts)
+        plot = Plotter(TimeSeriesQuantizer(), "./data/synthetic/plots/")
+        
+        qts = ds.get_batched(id= "0")
+        ts = ds.get_unbatched(id= "0")
+        plot.plot(ts, label="cont.")
+        plot.plot(qts, label="quant.")
+        plot.save(f"synthetic{i}.png")
