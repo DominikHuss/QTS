@@ -9,6 +9,7 @@ from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
 patch_typeguard()
 
+
 class PositionalEncoding(nn.Module):
 
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
@@ -27,5 +28,9 @@ class PositionalEncoding(nn.Module):
         Args:
             x: Tensor, shape [seq_len, batch_size, embedding_dim]
         """
+        x = x.permute(1,0,2)
+        test = x.size(0)
         x = x + self.pe[:x.size(0)]
-        return self.dropout(x)
+        x = self.dropout(x)
+        
+        return x.permute(1,0,2)
