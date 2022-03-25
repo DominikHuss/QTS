@@ -5,19 +5,18 @@ from model import TransformerModel
 from model import QModelContainer
 from plot import Plotter
 from preprocessing import TimeSeriesQuantizer, TimeSeries, QTimeSeries
-from _synthetic_data_generation import random_peaks, random
 from dataset import QDataset
 
 
 if __name__ == "__main__":
-    np.random.seed(0)
-
     trans = TransformerModel()
     quant = TimeSeriesQuantizer()
     qmc = QModelContainer(trans, quant)
-    #exit()
-
+    
+    random_shifts = qmc.random_shifts
+    print("Random shifts: ", random_shifts)
     soft_labels = qmc.soft_labels
+    print("Soft labels: ", soft_labels)
 
     x = np.arange(366)
     ts  = [TimeSeries(
@@ -29,11 +28,7 @@ if __name__ == "__main__":
     all_qds = QDataset(ts, batch=True)
     train_qds = QDataset(ts, split="train", batch=True, soft_labels=soft_labels)
     eval_qds = QDataset(ts, split="eval", batch=True, soft_labels=soft_labels)
-    #test_qds = QDataset(ts, split="test", batch=True)
-    print(train_qds.raw_data[0].tokens)
-    print(train_qds.raw_data[0].tokens_y)
-    print(train_qds.raw_data[0].unnormalize())
-    print(train_qds.raw_data[0].ts.y)
+    test_qds = QDataset(ts, split="test", batch=True)
 
     qmc.train(train_qds, eval_qds)
     if qmc._global_SMOKE_TEST:
@@ -47,12 +42,21 @@ if __name__ == "__main__":
         plot.plot(QDataset(ts, split="eval", batch=False).raw_data[i].ts, label="eval")
         plot.plot(qmc.generate(train_qds, id=f"ts{i}", horizon=int(train_qds.get_unbatched(f"ts{i}").length()-(qmc.window_length-qmc.num_last_unmasked))))
         plot.save(f"train{i}.png")
+        
         eval_plot = Plotter(TimeSeriesQuantizer(), "plots/")
         eval_plot.plot(all_qds.get_unbatched(f"ts{i}"), label="true")
         eval_plot.plot(train_qds.get_unbatched(f"ts{i}"), label="train")
         eval_plot.plot(eval_qds.get_unbatched(f"ts{i}"),  label="eval")
         eval_plot.plot(qmc.generate(eval_qds, id=f"ts{i}", horizon=int(eval_qds.get_unbatched(f"ts{i}").length()-(qmc.window_length-qmc.num_last_unmasked))))
         eval_plot.save(f"eval{i}.png")
+        
+        test_plot = Plotter(TimeSeriesQuantizer(), "plots/")
+        test_plot.plot(all_qds.get_unbatched(f"ts{i}"), label="true")
+        test_plot.plot(train_qds.get_unbatched(f"ts{i}"), label="train")
+        test_plot.plot(eval_qds.get_unbatched(f"ts{i}"),  label="eval")
+        test_plot.plot(test_qds.get_unbatched(f"ts{i}"),  label="test")
+        test_plot.plot(qmc.generate(test_qds, id=f"ts{i}", horizon=int(test_qds.get_unbatched(f"ts{i}").length()-(qmc.window_length-qmc.num_last_unmasked))))
+        test_plot.save(f"test{i}.png")
 
     # print("--------")
     # num_samples = 100
