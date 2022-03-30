@@ -25,7 +25,7 @@ class QMetric():
     
     @staticmethod
     def __validate(original: Union[QTimeSeries, np.ndarray],
-                generated: Union[QTimeSeries, np.ndarray]
+                   generated: Union[QTimeSeries, np.ndarray]
     ) -> None:
         if (type(original).__name__ == QTimeSeries.__name__ 
                 and type(generated).__name__ == QTimeSeries.__name__):
@@ -70,6 +70,9 @@ class QMetric():
         return np.abs(original - generated).mean()
     
     def __str__(self) -> str:
-        return (f"Acc: {self.accuracy:.2} | " +
-                f"Soft acc: {self.soft_accuracy:.2f} |" +
-                f"MAE: {self.mae:.2}")
+        return str({
+            key: f'{val:.2f}' for key, val in zip(self.__dict__.keys(), self.__dict__.values())
+        })
+        # return (f"Acc: {self.accuracy:.2} | " +
+        #         f"Soft acc: {self.soft_accuracy:.2f} |" +
+        #         f"MAE: {self.mae:.2}")

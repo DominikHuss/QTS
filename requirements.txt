@@ -7,3 +7,4 @@ numpy
 pandas
 timeseries-generator
 scipy
+transformers

@@ -1,13 +1,15 @@
-from typing import Dict
-from argparse import ArgumentParser, Namespace
-import warnings
-
-import torch
-
 import os
 import json
+import sys
+import warnings
+import torch
+from typing import Dict
+from argparse import ArgumentParser, Namespace
+from tests.constants import WINDOW_WIDTH
+
 
 def validate_args(args: Namespace) -> Namespace:
+    #TO DO: assert qds == qtz == qmc window length
     args.trans_num_embedding = args.qtz_num_bins + args.qtz_num_special_bins
     args.qmc_window_length = args.qtz_window_length
     args.qmc_num_last_unmasked = args.qds_num_last_unmasked
@@ -20,7 +22,7 @@ def validate_args(args: Namespace) -> Namespace:
 def save_args(args: Namespace,
               path: str) -> None:
     with open(os.path.join(path, 'params.json'), 'w') as f:
-        json.dump(vars(args), f)
+        json.dump(vars(args), f, indent=4)
 
 def load_args(path: str) -> Namespace:
     with open(os.path.join(path, 'params.json')) as f:
@@ -76,37 +78,43 @@ def _parse_arguments():
     parser.add_argument("--cuda", action="store_true")
     parser.add_argument("--SMOKE-TEST", action="store_true")
     parser.add_argument("--ARGS-FILE", type=str, default=None)
-    parser.add_argument("--qtz-l-bound", type=float, default=0.0)
-    parser.add_argument("--qtz-u-bound", type=float, default=1.0)
-    parser.add_argument("--qtz-num-bins", type=int, default=10)
+    parser.add_argument("--qtz-l-bound", type=float, default= None)
+    parser.add_argument("--qtz-u-bound", type=float, default= None)
+    parser.add_argument("--qtz-num-bins", type=int, default=20)
     parser.add_argument("--qtz-num-special-bins", type=int, default=3)
     parser.add_argument("--qtz-l-value", type=int, default=-1)
     parser.add_argument("--qtz-u-value", type=int, default=2)
-    parser.add_argument("--qtz-window-length", type=int, default=20)
+    parser.add_argument("--qtz-window-length", type=int, default=20) #assert equals to qds, qmc
     parser.add_argument("--ts-train-split", type=float, default=0.7)
-    parser.add_argument("--ts-eval-split", type=float, default=0.15)
+    parser.add_argument("--ts-eval-split", type=float, default=0.2)
     parser.add_argument("--qds-num-last-unmasked", type=int, default=1) # values different than 1 break the training loop (needs ugly reshapes)
     parser.add_argument("--qds-objective", choices=["ar", "mlm"], default="ar")
     parser.add_argument("--qds-inner-split", action="store_true")
+    parser.add_argument("--qds-window-length", type=int, default=20) # assert equals to qtz, qmc
     parser.add_argument("--trans-num-embedding", type=int, default=13)
     parser.add_argument("--trans-att-num-heads", type=int, default=3)
     parser.add_argument("--trans-att-feedforward-dim", type=int, default=64)
     parser.add_argument("--trans-dropout", type=float, default=0.1)
     parser.add_argument("--trans-pos-dropout", type=float, default=0.1)
-    parser.add_argument("--trans-pos-max-len", type=int, default=5000)
+    parser.add_argument("--trans-pos-max-len", type=int, default=20) #should equal to qtz/qds window_length?
     parser.add_argument("--trans-att-num-layers", type=int, default=4)
     parser.add_argument("--trans-embedding-dim", type=int, default=64)
     parser.add_argument("--trans-lr", type=float, default=1e-4)
     parser.add_argument("--trans-weight-decay", type=float, default=1e-7)
-    parser.add_argument("--qmc-num-epochs", type=int, default=1000)
+    parser.add_argument("--qmc-num-epochs", type=int, default=1)
     parser.add_argument("--qmc-batch-size", type=int, default=128)
     parser.add_argument("--qmc-shuffle", type=bool, default=False)
     parser.add_argument("--qmc-eval-epoch", type=int, default=10)
-    parser.add_argument("--qmc-window-length", type=int, default=20) # assert equals to qtz
+    parser.add_argument("--qmc-window-length", type=int, default=20) # assert equals to qtz and qds
     parser.add_argument("--qmc-num-last-unmasked", type=int, default=1) # assert equals to qds
     parser.add_argument("--qmc-random-shifts", type=bool, default=False)
     parser.add_argument("--qmc-soft-labels", type=bool, default=False)
-    args = parser.parse_args()
+    
+    if 'pytest' in sys.argv:
+        args = parser.parse_args(["--qtz-window-length", str(WINDOW_WIDTH)])
+    else:
+        args = parser.parse_args()
+   
     if args.ARGS_FILE is not None:
         args = load_args("plots/")
     args = validate_args(args)
