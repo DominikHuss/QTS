@@ -10,17 +10,17 @@ ASSERTION_ERROR = "Original and generated data must have to equal shape"
 class QMetric():
     @typechecked
     def __init__(self,
-                original: QTimeSeries,
-                generated: QTimeSeries
-    ) -> None:
+                original:QTimeSeries,
+                generated:QTimeSeries,
+                soft_acc_threshold: int = 1) -> None:
         if (type(original).__name__ == QTimeSeries.__name__ 
                 and type(generated).__name__ == QTimeSeries.__name__):
             self.__validate(original,generated)
         else:
             raise ValueError('Original and generated must be QTimeSeries type!')
-        
+        self.soft_acc_threshold = soft_acc_threshold
         self.accuracy = self.calc_accuracy(original, generated)
-        self.soft_accuracy = self.calc_soft_accuracy(original, generated)
+        self.soft_accuracy = self.calc_soft_accuracy(original, generated,self.soft_acc_threshold)
         self.mae = self.calc_mae(original.tokens_y,generated.tokens_y)
     
     @staticmethod
@@ -73,6 +73,3 @@ class QMetric():
         return str({
             key: f'{val:.2f}' for key, val in zip(self.__dict__.keys(), self.__dict__.values())
         })
-        # return (f"Acc: {self.accuracy:.2} | " +
-        #         f"Soft acc: {self.soft_accuracy:.2f} |" +
-        #         f"MAE: {self.mae:.2}")

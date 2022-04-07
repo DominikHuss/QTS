@@ -2,7 +2,7 @@ import functools
 import inspect
 
 # TODO: remove this import once packaged
-from __init__ import ArgumentHandler
+from _argparse import ArgumentHandler
 
 def parse_args(args_prefix):
     def decorator_parse_args(cls):

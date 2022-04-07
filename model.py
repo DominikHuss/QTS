@@ -160,7 +160,7 @@ class TransformerModel(nn.Module, QModel):
         vac = ~torch.tril(torch.ones(y.shape[1], y.shape[1])).type(torch.BoolTensor)
 
         o = self.module["emb"](y)
-        #o = self.module["pos"](o)
+        o = self.module["pos"](o)
         o = self.module["trans"](o, mask=vac)
         o = self.module["out_proj"](o)
         return o
@@ -174,7 +174,6 @@ class TransformerModel(nn.Module, QModel):
         embedding = nn.Embedding(self.num_embedding, 
                                  self.embedding_dim*self.att_num_heads)
         pos = PositionalEncoding(d_model=self.embedding_dim*self.att_num_heads,
-                                 dropout=self.pos_dropout,
                                  max_len=self.pos_max_len)
         transformer_encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model=self.embedding_dim*self.att_num_heads, 
                                                                                nhead=self.att_num_heads, 

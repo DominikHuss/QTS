@@ -12,10 +12,8 @@ patch_typeguard()
 
 class PositionalEncoding(nn.Module):
 
-    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+    def __init__(self, d_model: int, max_len: int = 5000):
         super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-
         position = torch.arange(max_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
         pe = torch.zeros(max_len, 1, d_model)
@@ -29,8 +27,5 @@ class PositionalEncoding(nn.Module):
             x: Tensor, shape [seq_len, batch_size, embedding_dim]
         """
         x = x.permute(1,0,2)
-        test = x.size(0)
         x = x + self.pe[:x.size(0)]
-        x = self.dropout(x)
-        
         return x.permute(1,0,2)

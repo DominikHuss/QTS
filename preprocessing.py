@@ -1,13 +1,12 @@
 # This __init__ is currently here, but will be removed once all of this is properly packed into a package 
 from __init__ import *
-from decorators import parse_args
+from typing import Union, List
 
 import numpy as np
-from matplotlib.ticker import (AutoMinorLocator, MultipleLocator)
-
-from typing import Union, Iterable, List, Any
-from torchtyping import TensorType, patch_typeguard
+from torchtyping import patch_typeguard
 from typeguard import typechecked
+
+from decorators import parse_args
 patch_typeguard()
 
 @parse_args(args_prefix="ts")
@@ -79,9 +78,6 @@ class TimeSeries():
                               "eval": train_split,
                               "test": eval_split,
                               "none": 0}
-        #print(self.splits_masks)
-        #print(self.splits_starts)
-        #print(self.splits_len)
         assert np.sum(self.splits_masks["train"] & self.splits_masks["eval"] & self.splits_masks["test"]) == 0
         if self.splits_len["eval"] != 0 and self.splits_starts["eval"] != 0:
             assert self.splits_masks["eval"][self.splits_starts["eval"]] == 1 and self.splits_masks["eval"][self.splits_starts["eval"]-1] == 0
@@ -108,7 +104,11 @@ class QTimeSeries():
         return self.ts.unnormalize(self.tokens_y)
 
     def add_to_plot(self, ax, *args, **kwargs):
-        ax.plot(range(self.ts.x[0], self.ts.x[0]+self.tokens_y.shape[0]), self.tokens_y, marker="|", ms=9, mew=2, mfc="black", mec="black", ls="--", lw=0.5, c="black", **kwargs)
+        kwargs['mfc'] = kwargs['mfc'] if 'mfc' in kwargs else 'black'
+        kwargs['mec'] = kwargs['mec'] if 'mec' in kwargs else 'black'
+        kwargs['c'] = kwargs['c'] if 'c' in kwargs else 'black'
+        
+        ax.plot(range(self.ts.x[0], self.ts.x[0]+self.tokens_y.shape[0]), self.tokens_y, marker="|", ms=4, mew=1, ls="--", lw=0.1, **kwargs)
 
     def get(self, split="none"):
         m = self.ts.splits_masks[split]
@@ -139,22 +139,31 @@ class TimeSeriesQuantizer():
         bin_edges_strided = np.lib.stride_tricks.sliding_window_view(self.bins_edges, 2)
         qts = []
         for ts in time_series:
-            y = ts.normalize()
-            #print(y)
-            bin_assignments = np.logical_and(y>bin_edges_strided[:, 0][np.newaxis, :].T, 
-                                             y<=bin_edges_strided[:, 1][np.newaxis, :].T)
-            zero_bin_assignments = (y==0)[np.newaxis, :]
-            l_bin_assignments = (y<self.bins_edges[0])[np.newaxis, :]
-            u_bin_assignments = (y>self.bins_edges[-1])[np.newaxis, :]
-            all_bin_assignments = np.concatenate((bin_assignments, zero_bin_assignments, l_bin_assignments, u_bin_assignments))
+            y = ts.y
+            y_norm = ts.normalize()
+          
+            zero_bin_assignments = (y == 0)[np.newaxis, :]
+            l_bin_assignments = (y < self.l_bound)[np.newaxis, :] if self.l_bound \
+                else np.zeros(y.shape, dtype = bool)[np.newaxis, :] 
+            u_bin_assignments = (y > self.u_bound)[np.newaxis, :] if self.u_bound \
+                else np.zeros(y.shape, dtype = bool)[np.newaxis, :]
+            not_num_special_assignments = ~np.logical_or(zero_bin_assignments,
+                                                np.logical_or(l_bin_assignments,
+                                                              u_bin_assignments))
+            others_assignments = np.zeros((len(self.special_tokens)-3,y.shape[0],), dtype = bool) #why -3? --> 3 num special tokens! 
+            bin_assignments = np.logical_and(y_norm>bin_edges_strided[:, 0][np.newaxis, :].T, 
+                                             y_norm<=bin_edges_strided[:, 1][np.newaxis, :].T)
+            bin_assignments = not_num_special_assignments * bin_assignments
+            all_bin_assignments = np.concatenate((bin_assignments,
+                                                  zero_bin_assignments,
+                                                  l_bin_assignments,
+                                                  u_bin_assignments,
+                                                  others_assignments))
             bin_idx = self.bins_indices@all_bin_assignments
-            #bin_val = self.bins_values@all_bin_assignments
-            bin_val = np.take(self.bins_values, bin_idx)
-
+            bin_val = np.take(self.bins_values, bin_idx) 
             if (not isinstance(_time_series, list)) and (not batch):
                 return QTimeSeries(ts, bin_idx, bin_val)
             else:
-                #print(bin_idx)
                 qts.append(QTimeSeries(ts, bin_idx, bin_val))
         return qts
 
@@ -163,6 +172,9 @@ class TimeSeriesQuantizer():
               _time_series: List[TimeSeries]) -> List[TimeSeries]:
         time_series = []
         for ts in _time_series:
+            if (n_padding := self.window_length - ts.length()) > 0: #:= works with version python 3.8+ 
+                ts.x = np.concatenate((ts.x, np.full(n_padding, self.special_tokens['pad'])))
+                ts.y = np.concatenate((ts.y, np.full(n_padding, self.special_tokens['pad'])))
             y_batched = np.lib.stride_tricks.sliding_window_view(ts.y, self.window_length)
             x_batched = np.lib.stride_tricks.sliding_window_view(ts.x, self.window_length)
             #print(y_batched)
@@ -171,17 +183,28 @@ class TimeSeriesQuantizer():
         return time_series
 
 
-    def _build(self):
-        self.bins_edges = np.linspace(self.l_bound, self.u_bound, self.num_bins+1)
+    def _build(self): 
+        default_special_tokens ={ #maybe as CONST?
+            "zero": self.num_bins,
+            "low": self.num_bins + 1, #lower anomaly
+            "upp": self.num_bins + 2, #upper anomaly
+            "cls": self.num_bins + 3, 
+            "bos": self.num_bins + 4, 
+            "sep": self.num_bins + 5,
+            "eos": self.num_bins + 6,
+            "mask": self.num_bins + 7,
+            "pad": self.num_bins + 8
+        }
+        additional_special_tokens = ({token: self.num_bins
+                                             + len(self.default_special_tokens) + idx #maybe +1?
+                                             for idx, token in enumerate(self.additional_special_bins)}
+                                        if self.additional_special_bins else None)
+        self.special_tokens = {**default_special_tokens, **additional_special_tokens} if additional_special_tokens else default_special_tokens
+        self.bins_edges = np.linspace(0, 1, self.num_bins+1) #ts is always has normalized values in range [0,1]
         self.bins_values = np.array([0.5*self.bins_edges[i] + 0.5*self.bins_edges[i+1] for i in range(len(self.bins_edges)-1)] + [0.0, self.l_value, self.u_value])
-        self.bins_indices = np.arange(self.num_bins+self.num_special_bins)
-        #print(self.bins_edges)
-        #print(self.bins_values)
-        #print(self.bins_indices)
-
+        self.bins_indices = np.arange(self.num_bins+len(self.special_tokens)) 
 
 if __name__ == '__main__':
-    
     x = np.arange(15)
     y = np.arange(15)
     tsq = TimeSeriesQuantizer()
