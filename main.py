@@ -9,6 +9,7 @@ from dataset import QDataset
 from metric import QMetric
 from transformers import BertTokenizer
 
+
 def _split_data(generated, qmc):
     original_from_generated = QTimeSeries(TimeSeries(generated.ts.x[:qmc.window_length],
                                                 generated.ts.y[:qmc.window_length],
