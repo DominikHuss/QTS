@@ -157,14 +157,14 @@ class QDataset(Dataset):
         """
         tokens, labels = self.data[idx]['y'].clone(), self.data[idx]['y'].clone()
         special_tokens_matrix = tokens >= self.tsq.num_bins  
-        probability_matrix = torch.full(tokens.shape, self.mlm_masked_probability)
+        probability_matrix = torch.full(tokens.shape, self.mlm_masked_probability,device=torch.device(self._global_cuda))
         probability_matrix.masked_fill_(special_tokens_matrix, value=0.0)
-        masked_idx = torch.bernoulli(probability_matrix).bool()
+        masked_idx = torch.bernoulli(probability_matrix).bool().to(device=torch.device(self._global_cuda))
         labels[~masked_idx] = self.mlm_non_masked_value
-        masked_tokens_idx = torch.bernoulli(torch.full(tokens.shape, self.mlm_masked_token_prob)).bool() & masked_idx
+        masked_tokens_idx = torch.bernoulli(torch.full(tokens.shape, self.mlm_masked_token_prob)).bool().to(device=torch.device(self._global_cuda)) & masked_idx
         tokens[masked_tokens_idx] = self.tsq.special_tokens['mask']
-        random_tokens_idx = torch.bernoulli(torch.full(tokens.shape, self.mlm_random_token_prob)).bool() & masked_idx & ~masked_tokens_idx
-        random_tokens = torch.randint(self.tsq.num_bins, tokens.shape, dtype=torch.long)
+        random_tokens_idx = torch.bernoulli(torch.full(tokens.shape, self.mlm_random_token_prob)).bool().to(device=torch.device(self._global_cuda)) & masked_idx & ~masked_tokens_idx
+        random_tokens = torch.randint(self.tsq.num_bins, tokens.shape, dtype=torch.long, device=torch.device(self._global_cuda))
         tokens[random_tokens_idx] = random_tokens[random_tokens_idx]
         # tokens = torch.cat((torch.tensor([self.tsq.special_tokens['cls']]),
         #                     tokens,
@@ -183,13 +183,13 @@ class QDataset(Dataset):
             tokens = np.concatenate(([self.tsq.special_tokens['cls']],
                                       tokens,
                                       [self.tsq.special_tokens['sep']]))
-        return torch.from_numpy(tokens).to(torch.long)
+        return torch.from_numpy(tokens).to(device=torch.device(self._global_cuda))
 
     def _get_y_hat(self, idx):
         tokens, _, _, _ = self.raw_data[idx].get(self.split if self.inner_split else "none")
         if self.objective == "ar": 
             tokens = tokens[1:]
-        return torch.from_numpy(tokens).to(torch.long)
+        return torch.from_numpy(tokens).to(device=torch.device(self._global_cuda))
 
     def _get_y_hat_probs(self, idx):
         tokens = self._get_y_hat(idx)
@@ -210,7 +210,7 @@ class QDataset(Dataset):
             normal_t = F.conv1d(normal_t.unsqueeze(0), kernel, groups=num_tokens, padding="same")
             t = torch.cat((normal_t.squeeze(0), special_t), dim=-1)
             t = t/t.sum(dim=-1, keepdim=True)
-        return t
+        return t.to(device=torch.device(self._global_cuda))
 
     def _get_mask(self, idx):
         l = self.raw_data[idx].length(self.split if self.inner_split else "none") - 1
@@ -219,7 +219,7 @@ class QDataset(Dataset):
             mask[-self.num_last_unmasked:] = 1
         else:
             raise NotImplementedError("MLM isn't implemented yet.")
-        return mask
+        return mask.to(device=torch.device(self._global_cuda))
 
     def _build(self):
         if self.objective == 'ar':

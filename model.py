@@ -72,15 +72,10 @@ class TransformerModel(nn.Module, QModel):
         epoch_loss = 0
         self.train()
         for batch in train_dataloader:
-            #print(batch)
             self.optimizer.zero_grad()
             y_hat = self.forward(batch["y"])
-
-            #true = batch["y_hat"][batch["mask"]]
             true = batch["y_hat_probs"][batch["mask"]]
             pred = y_hat[batch["mask"]]
-            #print(true.shape)
-            #print(pred.shape)
             loss = self.criterion(pred, true)
             loss.backward()
             self.optimizer.step()
@@ -112,6 +107,7 @@ class TransformerModel(nn.Module, QModel):
                  *,
                  epoch: int = -1,
                  _dataset: str = "EVAL"):
+        
         self.eval()
         eval_loss = 0
         for batch in eval_dataloader:
@@ -190,9 +186,8 @@ class TransformerModel(nn.Module, QModel):
                                      "out_proj": output_proj})
         self.optimizer = torch.optim.Adam(self.module.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.criterion = SoftCrossEntropyLoss
-        #w = torch.ones(self.num_embedding)
-        #w[-3] = 0.1
-        #self.criterion = nn.CrossEntropyLoss(weight=w)
+        if self._global_cuda == "gpu":
+            self.cuda()
 
 @parse_args(args_prefix="qmc")
 class QModelContainer():
