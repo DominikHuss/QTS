@@ -1,0 +1,10 @@
+{  
+    "model": "gpt",
+    "trans_att_num_heads": 6,
+    "trans_att_feedforward_dim": 3072,
+    "trans_dropout": 0.1,
+    "trans_pos_dropout": 0.1,
+    "trans_att_num_layers": 6,
+    "trans_embedding_dim": 384,
+    "qds_objective": "ar"
+}

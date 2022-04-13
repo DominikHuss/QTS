@@ -172,19 +172,18 @@ class TimeSeriesQuantizer():
               _time_series: List[TimeSeries]) -> List[TimeSeries]:
         time_series = []
         for ts in _time_series:
-            if (n_padding := self.window_length - ts.length()) > 0: #:= works with version python 3.8+ 
+            if (n_padding := self._global_window_length - ts.length()) > 0: #:= works with version python 3.8+ 
                 ts.x = np.concatenate((ts.x, np.full(n_padding, self.special_tokens['pad'])))
                 ts.y = np.concatenate((ts.y, np.full(n_padding, self.special_tokens['pad'])))
-            y_batched = np.lib.stride_tricks.sliding_window_view(ts.y, self.window_length)
-            x_batched = np.lib.stride_tricks.sliding_window_view(ts.x, self.window_length)
+            y_batched = np.lib.stride_tricks.sliding_window_view(ts.y, self._global_window_length)
+            x_batched = np.lib.stride_tricks.sliding_window_view(ts.x, self._global_window_length)
             #print(y_batched)
             for i in range(y_batched.shape[0]):
                 time_series.append(TimeSeries(x_batched[i], y_batched[i], id=ts._id, min_y=ts.min_y, max_y=ts.max_y))
         return time_series
 
-
     def _build(self): 
-        default_special_tokens ={ #maybe as CONST?
+        default_special_tokens ={
             "zero": self.num_bins,
             "low": self.num_bins + 1, #lower anomaly
             "upp": self.num_bins + 2, #upper anomaly
@@ -203,18 +202,3 @@ class TimeSeriesQuantizer():
         self.bins_edges = np.linspace(0, 1, self.num_bins+1) #ts is always has normalized values in range [0,1]
         self.bins_values = np.array([0.5*self.bins_edges[i] + 0.5*self.bins_edges[i+1] for i in range(len(self.bins_edges)-1)] + [0.0, self.l_value, self.u_value])
         self.bins_indices = np.arange(self.num_bins+len(self.special_tokens)) 
-
-if __name__ == '__main__':
-    x = np.arange(15)
-    y = np.arange(15)
-    tsq = TimeSeriesQuantizer()
-    print(tsq.quantize(TimeSeries(x,y)).get())
-    qts = tsq.quantize(TimeSeries(x,y), batch=True)
-    for q in qts:
-        print(q.get())
-    #t = qts.get()
-    #print(t[0].shape)
-    #print(qts.length())
-    #t2 = qts.get("train")
-    #print(t2[0].shape)
-    #print(qts.length("train"))

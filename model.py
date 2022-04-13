@@ -1,22 +1,22 @@
-from plot import Plotter
-from _synthetic_data_generation import random_peaks, random
-from dataset import QDataset
-from criterion import SoftCrossEntropyLoss
-from positional_encoding import PositionalEncoding
-from preprocessing import TimeSeriesQuantizer, TimeSeries, QTimeSeries
-from decorators import parse_args
-
 import abc
+import warnings
+from typing import Dict, Union, Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data.dataloader import DataLoader
-
-import warnings
-from typing import Union, Iterable, List, Literal, Optional
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
+from transformers import BertForMaskedLM, BertConfig
+from transformers import GPT2Config, GPT2LMHeadModel
+from plot import Plotter
+
+from dataset import QDataset
+from criterion import SoftCrossEntropyLoss
+from positional_encoding import PositionalEncoding
+from preprocessing import TimeSeriesQuantizer, TimeSeries, QTimeSeries
+from decorators import parse_args
 patch_typeguard()
 
 class QModel(abc.ABC):
@@ -44,6 +44,7 @@ class QModel(abc.ABC):
     def _reset(self, *args, **kwargs):
         raise NotImplementedError()
 
+
 @parse_args(args_prefix="ngram")
 class NgramModel(nn.Module, QModel):
     def train_one_epoch(self, *args, **kwargs):
@@ -64,6 +65,7 @@ class NgramModel(nn.Module, QModel):
     def _build(self):
         print(self.a)
         self.l = nn.Linear(1,1)
+
 
 @parse_args(args_prefix="trans")
 class TransformerModel(nn.Module, QModel):
@@ -189,6 +191,199 @@ class TransformerModel(nn.Module, QModel):
         if self._global_cuda == "gpu":
             self.cuda()
 
+
+@parse_args(args_prefix="trans")
+class BertModel(nn.Module, QModel):
+    def __init__(self,
+                special_tokens: Dict[str,int],
+                vocab_size: int) -> None:
+        super().__init__()
+        #TODO: add special tokens validations
+        self.mask_token = torch.tensor(special_tokens['mask']).unsqueeze(0)
+        self.cls_token = torch.tensor(special_tokens['cls']).unsqueeze(0)
+        self.sep_token = torch.tensor(special_tokens['sep']).unsqueeze(0)
+        self.pad_token = torch.tensor(special_tokens['pad']).unsqueeze(0)
+        self.vocab_size = vocab_size   
+    
+    @typechecked
+    def train_one_epoch(self, epoch, train_dataloader: DataLoader):
+        epoch_loss = 0
+        self.train()
+        for (tokens, labels) in train_dataloader:
+            loss = self.model(input_ids=tokens, labels=labels).loss
+            loss.backward()
+
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+            epoch_loss += loss
+        print(f"Epoch {epoch}: Loss = {epoch_loss/len(train_dataloader)}")
+
+    def evaluate(self, 
+                 eval_dataloader: DataLoader,
+                 *,
+                 epoch: int = -1,
+                 _dataset: str = "EVAL"):
+        self.eval()
+        eval_loss = 0
+        for (tokens, labels) in eval_dataloader:
+            loss = self.model(input_ids=tokens, labels=labels).loss
+            loss.backward()
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+            eval_loss += loss
+        if epoch >= 0:
+            print(f"{_dataset} -- Epoch {epoch}: Loss = {eval_loss/len(eval_dataloader)}")
+        else:
+            print(f"{_dataset} -- Loss = {eval_loss/eval_dataloader}")
+
+    @typechecked
+    def predict(self, y: Union[TensorType[-1], TensorType[-1, -1]]) -> TensorType:
+        self.eval()
+        return F.softmax(self.model(input_ids=y.unsqueeze(0)).logits.squeeze(0), dim=-1).argmax(dim=-1)
+        
+    @typechecked
+    def generate(self, 
+                 time_series: Union[TensorType[-1], TensorType[-1, -1]],
+                 horizon: int,
+                 *,
+                 stochastic) -> TensorType: 
+        self.eval()
+        _time_series = time_series[1:-1]
+        full_time_series = _time_series.clone()
+        for _ in range(horizon):
+            _time_series = torch.cat((self.cls_token,
+                                     _time_series,
+                                     self.mask_token,
+                                     self.sep_token))
+            predicted_token = self.predict(_time_series)[-2]# get [MASK] prediction
+            _time_series = torch.cat((_time_series[2:-2], predicted_token.unsqueeze(0)))
+            full_time_series = torch.cat((full_time_series, predicted_token.unsqueeze(0)), dim=-1)
+            
+        return full_time_series
+
+    def load(self, *args, **kwargs):
+        return True
+
+    def save(self, *args, **kwargs):
+        return True
+
+    def _reset(self, *args, **kwargs):
+        self.was_trained = False
+        self._build()
+
+    def _build(self):
+        max_length = self._global_window_length + 3 #[CLS] tokens *[MASK] [SEP] #*only when generating
+        config = BertConfig(vocab_size=self.vocab_size,
+                            max_length=max_length,
+                            hidden_size=self.embedding_dim,
+                            num_hidden_layers=self.att_num_layers,
+                            num_attention_heads=self.att_num_heads,
+                            intermediate_size=self.att_feedforward_dim,
+                            hidden_dropout_prob=self.dropout,
+                            attention_probs_dropout_prob=self.dropout,
+                            max_position_embeddings=max_length,
+                            mask_token_id=self.mask_token.item(),
+                            cls_token_id =self.cls_token.item(),
+                            sep_token_id=self.sep_token.item(),
+                            pad_token_id=self.pad_token.item())
+        self.model =  BertForMaskedLM(config)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        if self._global_cuda == "gpu":
+            self.cuda()
+
+
+@parse_args(args_prefix="trans")
+class GPTModel(nn.Module, QModel):
+    def __init__(self,
+                special_tokens: Dict[str,int],
+                vocab_size: int) -> None:
+        super().__init__()
+        self.mask_token = torch.tensor(special_tokens['mask']).unsqueeze(0)
+        self.vocab_size = vocab_size   
+    
+    @typechecked
+    def train_one_epoch(self, epoch, train_dataloader: DataLoader):
+        epoch_loss = 0
+        self.train()
+        for (tokens, labels) in train_dataloader:
+            loss = self.model(input_ids=tokens, labels=labels).loss
+            loss.backward()
+
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+            epoch_loss += loss
+        print(f"Epoch {epoch}: Loss = {epoch_loss/len(train_dataloader)}")
+
+    def evaluate(self, 
+                 eval_dataloader: DataLoader,
+                 *,
+                 epoch: int = -1,
+                 _dataset: str = "EVAL"):
+        self.eval()
+        eval_loss = 0
+        for (tokens, labels) in eval_dataloader:
+            loss = self.model(input_ids=tokens, labels=labels).loss
+            loss.backward()
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+            eval_loss += loss
+        if epoch >= 0:
+            print(f"{_dataset} -- Epoch {epoch}: Loss = {eval_loss/len(eval_dataloader)}")
+        else:
+            print(f"{_dataset} -- Loss = {eval_loss/eval_dataloader}")
+
+    @typechecked
+    def predict(self, y: Union[TensorType[-1], TensorType[-1, -1]]) -> TensorType:
+        self.eval()
+        return F.softmax(self.model(input_ids=y.unsqueeze(0)).logits.squeeze(0), dim=-1).argmax(dim=-1)
+        
+    @typechecked
+    def generate(self, 
+                 time_series: Union[TensorType[-1], TensorType[-1, -1]],
+                 horizon: int,
+                 *,
+                 stochastic) -> TensorType: 
+        self.eval()
+        _time_series = time_series.clone()
+        full_time_series = _time_series.clone()
+        for _ in range(horizon):
+            # _time_series = torch.cat((_time_series,
+            #                          self.mask_token))
+            predicted_token = self.predict(_time_series)[-1]
+            _time_series = torch.cat((_time_series[1:-1], predicted_token.unsqueeze(0)))
+            full_time_series = torch.cat((full_time_series, predicted_token.unsqueeze(0)), dim=-1)
+            
+        return full_time_series
+
+    def load(self, *args, **kwargs):
+        return True
+
+    def save(self, *args, **kwargs):
+        return True
+
+    def _reset(self, *args, **kwargs):
+        self.was_trained = False
+        self._build()
+
+    def _build(self):
+        max_length = self._global_window_length + 1 #tokens *[MASK] #*only when generating
+        config = GPT2Config(vocab_size=self.vocab_size,
+                            n_positions=max_length,
+                            n_embd=self.embedding_dim,
+                            n_layer=self.att_num_layers,
+                            n_head=self.att_num_heads,
+                            resid_pdrop=self.dropout,
+                            attn_pdrop=self.dropout,
+                            predict_special_tokens=False,
+                            max_position_embeddings=max_length,
+                            mask_token_id=self.mask_token.item(),
+                            )
+        self.model =  GPT2LMHeadModel(config)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        if self._global_cuda == "gpu":
+            self.cuda()
+
+
 @parse_args(args_prefix="qmc")
 class QModelContainer():
     def __init__(self, 
@@ -207,7 +402,7 @@ class QModelContainer():
         if _reset: self.model._reset()
 
         train_dataset.random_shifts = True if self.random_shifts else False
-        #train_dataset.soft_labels = True if self.soft_labels else False
+        train_dataset.soft_labels = True if self.soft_labels else False
 
         train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=self.shuffle)
         eval_dataloader = DataLoader(eval_dataset, batch_size=self.batch_size, shuffle=self.shuffle) if eval_dataset is not None else train_dataloader
@@ -233,11 +428,16 @@ class QModelContainer():
                  id: str = None) -> Optional[Union[QTimeSeries, TensorType[-1], TensorType[-1, -1]]]:
         if not self.model.was_trained:
             warnings.warn("The model was not trained, or was reset!")
-
+        
         if window_length is None:
-            window_length = self.window_length - self.num_last_unmasked
-
-
+            if type(self.model).__name__ == TransformerModel.__name__:#isinstance(self.model, type(TransformerModel)): why doesn't work properly?
+                window_length = self._global_window_length - self.num_last_unmasked
+            
+            elif type(self.model).__name__ == BertModel.__name__:
+                window_length = self._global_window_length + 2 #[CLS] tokens [SEP]
+            else:
+                window_length = self._global_window_length
+        
         if isinstance(y, torch.Tensor):
             if y.shape[-1] < window_length:
                 warnings.warn("When using a torch.Tensor as an input make sure that it is of sufficient length w.r.t. window length! Nothing was generated, and None was returned!")
@@ -254,16 +454,13 @@ class QModelContainer():
             qts = y
             _y = torch.tensor(y.tokens)
             _y = _y[:window_length]
-        elif type(y).__name__ == QDataset.__name__:
-
+        elif issubclass(type(y), QDataset):
             if id is None:
                 raise Exception("When used with a QDataset id parameter must be set!")
-
             (qts, _y), _, _ = y.get_batched(id, _all=True)
             if _y is None:
                 warnings.warn("Nothing was generated.")
                 return None
-
             if horizon is None:
                 horizon = int(y.get_unbatched(id).length()-window_length)
             _y = _y[:window_length]
@@ -271,14 +468,9 @@ class QModelContainer():
 
         if isinstance(y, torch.Tensor):
             return y_hat
-        
-        # TODO: return QTimeSeries
         qts.tokens_y = torch.take(torch.from_numpy(self.quantizer.bins_values), y_hat).numpy()
         qts.tokens = y_hat.numpy()
-        #print(qts.tokens)
-        #print(qts.tokens_y)
         return qts
-
 
     def _build(self):
         pass
