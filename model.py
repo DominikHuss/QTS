@@ -1,6 +1,6 @@
 import abc
 import warnings
-from typing import Dict, Union, Optional
+from typing import Union, Optional
 
 import torch
 import torch.nn as nn
@@ -10,12 +10,11 @@ from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
 from transformers import BertForMaskedLM, BertConfig
 from transformers import GPT2Config, GPT2LMHeadModel
-from plot import Plotter
 
 from dataset import QDataset
 from criterion import SoftCrossEntropyLoss
 from positional_encoding import PositionalEncoding
-from preprocessing import TimeSeriesQuantizer, TimeSeries, QTimeSeries
+from preprocessing import TimeSeriesQuantizer, QTimeSeries
 from decorators import parse_args
 patch_typeguard()
 
@@ -195,14 +194,18 @@ class TransformerModel(nn.Module, QModel):
 @parse_args(args_prefix="trans")
 class BertModel(nn.Module, QModel):
     def __init__(self,
-                special_tokens: Dict[str,int],
-                vocab_size: int) -> None:
+                 cls_token:int,
+                 sep_token:int,
+                 mask_token:int,
+                 pad_token:int,
+                 vocab_size:int,
+                 *args, **kwargs) -> None:
         super().__init__()
         #TODO: add special tokens validations
-        self.mask_token = torch.tensor(special_tokens['mask']).unsqueeze(0)
-        self.cls_token = torch.tensor(special_tokens['cls']).unsqueeze(0)
-        self.sep_token = torch.tensor(special_tokens['sep']).unsqueeze(0)
-        self.pad_token = torch.tensor(special_tokens['pad']).unsqueeze(0)
+        self.cls_token = torch.tensor(cls_token).unsqueeze(0)
+        self.sep_token = torch.tensor(sep_token).unsqueeze(0)
+        self.mask_token = torch.tensor(mask_token).unsqueeze(0)
+        self.pad_token = torch.tensor(pad_token).unsqueeze(0)
         self.vocab_size = vocab_size   
     
     @typechecked
@@ -295,10 +298,11 @@ class BertModel(nn.Module, QModel):
 @parse_args(args_prefix="trans")
 class GPTModel(nn.Module, QModel):
     def __init__(self,
-                special_tokens: Dict[str,int],
-                vocab_size: int) -> None:
+                mask_token:int,
+                vocab_size: int,
+                *args, **kwargs) -> None:
         super().__init__()
-        self.mask_token = torch.tensor(special_tokens['mask']).unsqueeze(0)
+        self.mask_token = torch.tensor(mask_token).unsqueeze(0)
         self.vocab_size = vocab_size   
     
     @typechecked
@@ -474,96 +478,3 @@ class QModelContainer():
 
     def _build(self):
         pass
-
-
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    np.random.seed(0)
-
-    trans = TransformerModel()
-    quant = TimeSeriesQuantizer()
-    qmc = QModelContainer(trans, quant)
-    #exit()
-
-    l=300
-    soft_labels = qmc.soft_labels
-
-    x = np.arange(l)
-
-    #y = np.sin(np.arange(l))
-    #y = np.concatenate((np.sin(np.arange(l//2)), np.sin(np.arange(l//2, l))-1))
-    #y = random(l, 1, 1)
-    y = random_peaks(l, 1, 1, 0.4)
-    z = np.cos(np.arange(l))
-
-    plot = Plotter(TimeSeriesQuantizer(), "plots/")
-
-    ts = TimeSeries(x,y, id="sin")
-    tz = TimeSeries(x,z, id="cos")
-    
-    #ts = [ts, tz]
-    all_qds = QDataset(ts, batch=True)
-    train_qds = QDataset(ts, split="train", batch=True, soft_labels=soft_labels)
-    eval_qds = QDataset(ts, split="eval", batch=True, soft_labels=soft_labels)
-    #test_qds = QDataset(ts, split="test", batch=True)
-    print(train_qds.raw_data[0].tokens)
-    print(train_qds.raw_data[0].tokens_y)
-    print(train_qds.raw_data[0].unnormalize())
-    print(train_qds.raw_data[0].ts.y)
-
-    qmc.train(train_qds, eval_qds)
-    if qmc._global_SMOKE_TEST:
-        exit()
-
-    print(qmc.generate(train_qds, id="sin"))
-    plot.plot(ts, label="true")
-    plot.plot(train_qds.get_unbatched("sin"), label="train")
-    plot.plot(QDataset(ts, split="eval", batch=False).raw_data[0].ts, label="eval")
-    plot.plot(qmc.generate(train_qds, id="sin", horizon=int(train_qds.get_unbatched("sin").length()-(qmc.window_length-qmc.num_last_unmasked))))
-    plot.save("train.png")
-    print(qmc.generate(train_qds, id="cos"))
-    print(qmc.generate(train_qds.raw_data[0], horizon=150))
-    print(qmc.generate(train_qds[0]["y"], horizon=150))
-    #print(qmc.generate(torch.tensor([5,9,9])))
-    #print(qmc.generate(torch.tensor([[5,9,9]])))
-
-    print(qmc.generate(QDataset(ts)[0]["y"], window_length=7, horizon=150))
-    print(torch.tensor(QDataset(ts, split="train", batch=False).raw_data[0].tokens))
-    print(torch.tensor(QDataset(ts, batch=False).raw_data[0].tokens))
-    for t in QDataset(ts, batch=False).raw_data:
-        print(t.tokens)
-
-    eval_plot = Plotter(TimeSeriesQuantizer(), "plots/")
-    eval_plot.plot(all_qds.get_unbatched("sin"), label="true")
-    eval_plot.plot(train_qds.get_unbatched("sin"), label="train")
-    eval_plot.plot(eval_qds.get_unbatched("sin"),  label="eval")
-    eval_plot.plot(qmc.generate(eval_qds, id="sin", horizon=int(eval_qds.get_unbatched("sin").length()-(qmc.window_length-qmc.num_last_unmasked))))
-    eval_plot.save("eval.png")
-
-    print("--------")
-    num_samples = 100
-    # all
-    train_random_plot = Plotter(TimeSeriesQuantizer(), "plots/")
-    for _ in range(num_samples):
-        train_random_plot.plot(qmc.generate(train_qds, 
-                                            id="sin", 
-                                            stochastic=True, 
-                                            horizon=int(train_qds.get_unbatched("sin").length()-(qmc.window_length-qmc.num_last_unmasked))), 
-                                            alpha=1/num_samples)
-    train_random_plot.save("random_train.png")
-    # eval
-    eval_random_plot = Plotter(TimeSeriesQuantizer(), "plots/")
-    for _ in range(num_samples):
-        eval_random_plot.plot(qmc.generate(eval_qds, 
-                                           id="sin", 
-                                           horizon=int(eval_qds.get_unbatched("sin").length()-(qmc.window_length-qmc.num_last_unmasked)), 
-                                           stochastic=True), 
-                                           alpha=1/num_samples)
-    eval_random_plot.save("random_eval.png")
-
-    cos_plot = Plotter(TimeSeriesQuantizer(), "plots/")
-    cos_plot.plot(tz, label="true")
-    cos_plot.plot(qmc.generate(QDataset(tz, split="train"), id="cos"))
-    cos_plot.save("cos_test.png")

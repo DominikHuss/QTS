@@ -1,5 +1,5 @@
 import functools
-import inspect
+
 
 # TODO: remove this import once packaged
 from _argparse import ArgumentHandler
@@ -19,3 +19,9 @@ def parse_args(args_prefix):
         return wrapper_parse_args
     return decorator_parse_args
 
+def get_global_args(func):
+    def inner():
+        ArgumentHandler._register_prefix("_global")
+        global_args = ArgumentHandler.get_global_args()
+        return func(**global_args)
+    return inner

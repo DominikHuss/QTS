@@ -34,7 +34,6 @@ class QMetric():
         elif (isinstance(original, np.ndarray)
                 and isinstance(generated, np. ndarray)):
                 assert original.shape == generated.shape, ASSERTION_ERROR
-                assert original.shape == generated.shape, ASSERTION_ERROR
         else:
             raise ValueError("Original and generated must be the same type!") 
     

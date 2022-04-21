@@ -108,7 +108,7 @@ class QTimeSeries():
         kwargs['mec'] = kwargs['mec'] if 'mec' in kwargs else 'black'
         kwargs['c'] = kwargs['c'] if 'c' in kwargs else 'black'
         
-        ax.plot(range(self.ts.x[0], self.ts.x[0]+self.tokens_y.shape[0]), self.tokens_y, marker="|", ms=4, mew=1, ls="--", lw=0.1, **kwargs)
+        ax.plot(range(self.ts.x[0], self.ts.x[0]+self.tokens_y.shape[0]), self.tokens_y, marker="|", ms=1, mew=1, ls="--", lw=0.06, **kwargs)
 
     def get(self, split="none"):
         m = self.ts.splits_masks[split]

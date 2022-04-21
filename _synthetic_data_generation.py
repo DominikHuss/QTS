@@ -3,9 +3,11 @@ import numpy as np
 import pandas as pd
 from timeseries_generator import LinearTrend, Generator, WhiteNoise, HolidayFactor, WeekdayFactor,SinusoidalFactor, RandomFeatureFactor
 
+from dataset import QDatasetBase
+
 
 def generate_univariate_ts(start: str = "01-01-2018",
-                        end: str = "01-01-2019",
+                        end: str = "01-01-2021",
                         lt_coef:  float = None,
                         lt_offset: float = None,
                         wn_std: float = None,
@@ -19,7 +21,7 @@ def generate_univariate_ts(start: str = "01-01-2018",
                     col_name="lt_trend"
     ) if lt_coef and lt_offset else None
     wn = WhiteNoise(stdev_factor= wn_std) if wn_std else None
-    hd = HolidayFactor(holiday_factor = 2.,
+    hd = HolidayFactor(holiday_factor = 1.2,
         special_holiday_factors = holidays
     ) if holidays else None
     wd = WeekdayFactor(col_name="week",
@@ -40,7 +42,7 @@ def generate_univariate_ts(start: str = "01-01-2018",
                     "amplitude": sin_config['amplitude'],
                     "phase": sin_config['phase'],
                     "mean": sin_config['mean']
-                }
+                }    
             }
     ) if sin_config  else None
     
@@ -73,42 +75,72 @@ if __name__ == "__main__":
     from preprocessing import  TimeSeriesQuantizer
     from dataset import QDataset
     from plot import Plotter
-        
-    for i in range(10):
-        gen_params = {
-            "wn_std": 0.15,
-            "week_days": {0: 0.89,
-                1: 0.92,
-                2: 0.95,
-                3: 0.91,
-                4: 1.11,
-                5: 1.15,
-                6: 1.2
-            },
-            "holidays": {
-                "Christmas_day": np.random.normal(6),
-                "Easter Monday": np.random.normal(6),
-                "All Saints' Day": np.random.normal(6),
-                "International Workers' Day":np.random.normal(6),
-                "Liberation Day":np.random.normal(6)
-            },
-            "sin_config": {"wavelength": 366,
-                    "amplitude": 0.2,
+    
+    gen_params = {
+            # "lt_coef": 1.0,
+            # "lt_offset": 0.0000,
+            "wn_std": 0.005,
+            # "week_days": {0: 0.99,
+            #     1: 0.98,
+            #     2: 0.99,
+            #     3: 1.0,
+            #     4: 1.01,
+            #     5: 1.02,
+            #     6: 1.01
+            # },
+            # "holidays": {
+            #     "Christmas_day": abs(np.random.normal()),
+            #     "Easter Monday":abs(np.random.normal()),
+            #     "All Saints' Day": abs(np.random.normal()),
+            #     "International Workers' Day": abs(np.random.normal()),
+            #     "Liberation Day": abs(np.random.normal())
+            # },
+            "sin_config": {"wavelength":90,
+                    "amplitude": 0.02,
                     "phase": 0,
-                    "mean": 0.5
+                    "mean": 0
             }
         }
-        with open(f"./data/synthetic/synthetic_params{i}.json","w") as fp:
-            json.dump(gen_params,fp)
-        
+    gen_params2 = {
+            "wn_std": 0.02,
+            "sin_config": {"wavelength": 60,
+                    "amplitude": 1,
+                    "phase": 0,
+                    "mean": 2
+            }
+        }
+    gen_params3 = {
+            "wn_std": 0.02,
+            "sin_config": {"wavelength": 30,
+                    "amplitude": 1,
+                    "phase": 90,
+                    "mean": 2
+            }
+        }
+    # params = {"sin1":gen_params,
+    #           "sin2":gen_params2,
+            #   "sin3":gen_params3}
+    with open(f"./data/basic/params.json","w") as fp:
+        json.dump(gen_params,fp,indent=4)
+    
+    for i in range(10):
         example_ts = generate_univariate_ts(**gen_params)
-        np.savetxt(f"./data/synthetic/synthetic{i}.csv", example_ts, delimiter=",")
+        # example_ts2 = generate_univariate_ts(**gen_params2)
+        # example_ts3 = generate_univariate_ts(**gen_params3)
+        # example_ts += example_ts2 + example_ts3
+        # shift = np.zeros(example_ts.shape)
+        # period = len(shift)//6
+        # shift[period:2*period] = 10
+        # shift[3*period:4*period] = 10
+        # shift[5*period:] = 10
+        # example_ts -= shift
+        np.savetxt(f"./data/basic/ts{i}.csv", example_ts, delimiter=",")
         
-        ds = QDataset(example_ts)
-        plot = Plotter(TimeSeriesQuantizer(), "./data/synthetic/plots/")
+        ds = QDatasetBase(example_ts)
+        plot = Plotter(TimeSeriesQuantizer(), "./data/basic/plots/")
         
         qts = ds.get_batched(id= "0")
         ts = ds.get_unbatched(id= "0")
         plot.plot(ts, label="cont.")
         plot.plot(qts, label="quant.")
-        plot.save(f"synthetic{i}.png")
+        plot.save(f"ts{i}.png")

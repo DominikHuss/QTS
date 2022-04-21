@@ -16,9 +16,6 @@ patch_typeguard()
 
 
 class QDataset(abc.ABC, Dataset):
-    def __init__(self) -> None:
-        super().__init__()
-    
     @abc.abstractmethod
     def get_unbatched(self, *args, **kwargs) -> Optional[TimeSeries]:
         raise NotImplementedError()
@@ -75,7 +72,7 @@ class QDatasetBase(QDataset):
     def get_unbatched(self,
                       id: str,
                       *,
-                      _quantized: bool = False) -> Optional[TimeSeries]:
+                      _quantized: bool = False) -> Optional[Union[TimeSeries, QTimeSeries]]:
         if self.raw_unbatched_data is None:
             warnings.warn("Initializing a QDataset with QTimeSeries holds not enough information to dissambiguate whether data are batched already. Returning None")
             return None
@@ -83,7 +80,7 @@ class QDatasetBase(QDataset):
         if _quantized and not self.batch:
             ts_data = self.raw_data
         elif _quantized and self.batch:
-            warnings.warn("Only works for window_step = 1")
+            #warnings.warn("Only works for window_step = 1")
             tokens,tokens_y = None, None 
             for qts in self.raw_data:
                 if qts.id() == id:

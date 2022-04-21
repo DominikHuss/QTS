@@ -5,7 +5,6 @@ import warnings
 import torch
 from typing import Dict, List
 from argparse import ArgumentParser, Namespace
-from tests.constants import WINDOW_WIDTH
 
 
 def validate_args(args: Namespace) -> Namespace:
@@ -74,11 +73,12 @@ class ArgumentHandler():
 # TODO: validate args; compute dependent arguments e.g. ngram_num_embedding = qtz_num_bins + qtz_num_special_bins, smoke_test and num_epochs
 def _parse_arguments():
     parser = ArgumentParser()
+    parser.add_argument("--ARGS-FILE", type=str, default=None)
+    parser.add_argument("--input-dir", type=str, default="data/basic")
     parser.add_argument("--cuda", action="store_true")
     parser.add_argument("--SMOKE-TEST", action="store_true")
-    parser.add_argument("--ARGS-FILE", type=str, default=None)
     parser.add_argument("--window-length", type=int, default=20)
-    parser.add_argument("--model", choices=['transformer','bert'], default="transformer")
+    parser.add_argument("--model", choices=['transformer','bert',"gpt"], default="transformer")
     #parser.add_argument("--objective", choices=["ar", "mlm"], default="ar")
     parser.add_argument("--qtz-l-bound", type=float, default= None)
     parser.add_argument("--qtz-u-bound", type=float, default= None)
@@ -102,7 +102,7 @@ def _parse_arguments():
     parser.add_argument("--trans-embedding-dim", type=int, default=64)
     parser.add_argument("--trans-lr", type=float, default=1e-4)
     parser.add_argument("--trans-weight-decay", type=float, default=1e-7)
-    parser.add_argument("--qmc-num-epochs", type=int, default=10)
+    parser.add_argument("--qmc-num-epochs", type=int, default=100)
     parser.add_argument("--qmc-batch-size", type=int, default=128)
     parser.add_argument("--qmc-shuffle", type=bool, default=False)
     parser.add_argument("--qmc-eval-epoch", type=int, default=10)
