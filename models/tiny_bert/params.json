@@ -1,10 +1,10 @@
 {  
     "model": "bert",
-    "trans_att_num_heads": 2,
+    "trans_att_num_heads": 4,
     "trans_att_feedforward_dim": 3072,
     "trans_dropout": 0.1,
     "trans_pos_dropout": 0.1,
-    "trans_att_num_layers": 2,
+    "trans_att_num_layers": 4,
     "trans_embedding_dim": 128,
     "qds_objective": "mlm"
 }
