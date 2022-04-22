@@ -1,0 +1,9 @@
+{
+    "wn_std": 0.005,
+    "sin_config": {
+        "wavelength": 90,
+        "amplitude": 0.02,
+        "phase": 0,
+        "mean": 0
+    }
+}

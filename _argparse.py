@@ -109,8 +109,8 @@ def _parse_arguments():
     parser.add_argument("--qmc-num-last-unmasked", type=int, default=1) # assert equals to qds
     parser.add_argument("--qmc-random-shifts", type=bool, default=False)
     parser.add_argument("--qmc-soft-labels", type=bool, default=False)
-    args = parser.parse_args()
-   
+    
+    args = parser.parse_args(["--ARGS-FILE", "tests"]) if "pytest" in sys.argv else parser.parse_args()
     if args.ARGS_FILE is not None:
         args_dict = vars(args)
         args_dict.update(vars(load_args(args.ARGS_FILE)))

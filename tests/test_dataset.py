@@ -1,40 +1,43 @@
 import pytest
 import numpy as np
 import torch
-from .. import TimeSeries
-from .. import TimeSeriesQuantizer
-from .. import QDataset
-from .constants import *
+from preprocessing import TimeSeries
+from preprocessing import TimeSeriesQuantizer
+from dataset import QDataset
 
 
-NDARRAY = np.arange(TS_LENGTH)
-TS =  TimeSeries(np.arange(TS_LENGTH),NDARRAY,"0")
-QUANTIZER =  TimeSeriesQuantizer()
-QTS = QUANTIZER.quantize(TS)
-ts1 = TimeSeries(np.arange(TS_LENGTH),np.arange(TS_LENGTH),"0")
-ts2 = TimeSeries(np.arange(TS_LENGTH,TS_LENGTH + 11),np.arange(TS_LENGTH,TS_LENGTH + 11),"1")
-TS_LIST = [ts1,ts2]
+# NDARRAY = np.arange(TS_LENGTH)
+# TS =  TimeSeries(np.arange(TS_LENGTH),NDARRAY,"0")
+# QUANTIZER =  TimeSeriesQuantizer()
+# QTS = QUANTIZER.quantize(TS)
+# ts1 = TimeSeries(np.arange(TS_LENGTH),np.arange(TS_LENGTH),"0")
+# ts2 = TimeSeries(np.arange(TS_LENGTH,TS_LENGTH + 11),np.arange(TS_LENGTH,TS_LENGTH + 11),"1")
+# TS_LIST = [ts1,ts2]
 
-@pytest.mark.parametrize("data",[
-    NDARRAY,
-    [NDARRAY],
-    TS,
-    [TS],
-    QTS,
-    [QTS]
-])
-def test_QDataset(data):
-    expected_y = torch.tensor(QTS.tokens[:-1])
-    expected_y_hat = torch.tensor(QTS.tokens[1:])
-    expected_y_hat_probs = torch.nn.functional.one_hot(expected_y_hat,len(QUANTIZER.bins_indices))
-    expected_mask = torch.zeros((TS_LENGTH-1), dtype=torch.bool)
-    expected_mask[-1] = 1 #only works for "ar"!
-    qds = QDataset(data, batch=False, soft_labels=False)
+
+# @pytest.mark.parametrize("data",[
+#     NDARRAY,
+#     [NDARRAY],
+#     TS,
+#     [TS],
+#     QTS,
+#     [QTS]
+# ])
+
+def test_QDataset(get_qts):
+    data = get_qts
+    print(data)
+    # expected_y = torch.tensor(QTS.tokens[:-1])
+    # expected_y_hat = torch.tensor(QTS.tokens[1:])
+    # expected_y_hat_probs = torch.nn.functional.one_hot(expected_y_hat,len(QUANTIZER.bins_indices))
+    # expected_mask = torch.zeros((TS_LENGTH-1), dtype=torch.bool)
+    # expected_mask[-1] = 1 #only works for "ar"!
+    # qds = QDataset(data, batch=False, soft_labels=False)
     
-    assert (qds[0]['y'] == expected_y).all()
-    assert (qds[0]['y_hat'] == expected_y_hat ).all()
-    assert (qds[0]['y_hat_probs'] == expected_y_hat_probs).all()
-    assert (qds[0]['mask'] == expected_mask).all()
+    # assert (qds[0]['y'] == expected_y).all()
+    # assert (qds[0]['y_hat'] == expected_y_hat ).all()
+    # assert (qds[0]['y_hat_probs'] == expected_y_hat_probs).all()
+    # assert (qds[0]['mask'] == expected_mask).all()
 
 @pytest.mark.parametrize("batch",[False,True])
 def test_get_unbatched_QDataset(batch):

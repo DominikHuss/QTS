@@ -290,7 +290,7 @@ class BertModel(nn.Module, QModel):
                             sep_token_id=self.sep_token.item(),
                             pad_token_id=self.pad_token.item())
         self.model =  BertForMaskedLM(config)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=5e-5, weight_decay=self.weight_decay)
         if self._global_cuda == "gpu":
             self.cuda()
 
@@ -339,6 +339,10 @@ class GPTModel(nn.Module, QModel):
     @typechecked
     def predict(self, y: Union[TensorType[-1], TensorType[-1, -1]]) -> TensorType:
         self.eval()
+        test_1 = self.model(input_ids=y.unsqueeze(0)).logits
+        test_2 = test_1.squeeze(0)
+        test_3 = F.softmax(test_2, dim=-1)
+        test_4 = test_3.argmax(dim=-1)
         return F.softmax(self.model(input_ids=y.unsqueeze(0)).logits.squeeze(0), dim=-1).argmax(dim=-1)
         
     @typechecked

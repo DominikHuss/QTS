@@ -169,15 +169,16 @@ class TimeSeriesQuantizer():
 
     @typechecked
     def batch(self,
-              _time_series: List[TimeSeries]) -> List[TimeSeries]:
+              _time_series: List[TimeSeries],
+              *,
+              _padded: bool = True) -> List[TimeSeries]:
         time_series = []
         for ts in _time_series:
-            if (n_padding := self._global_window_length - ts.length()) > 0: #:= works with version python 3.8+ 
+            if _padded and (n_padding := self._global_window_length - ts.length()) > 0: #:= works only with version python 3.8+ 
                 ts.x = np.concatenate((ts.x, np.full(n_padding, self.special_tokens['pad'])))
                 ts.y = np.concatenate((ts.y, np.full(n_padding, self.special_tokens['pad'])))
             y_batched = np.lib.stride_tricks.sliding_window_view(ts.y, self._global_window_length)
             x_batched = np.lib.stride_tricks.sliding_window_view(ts.x, self._global_window_length)
-            #print(y_batched)
             for i in range(y_batched.shape[0]):
                 time_series.append(TimeSeries(x_batched[i], y_batched[i], id=ts._id, min_y=ts.min_y, max_y=ts.max_y))
         return time_series
