@@ -51,11 +51,11 @@ def main(factory: QFactory, window_length: int):
               eval_generated,eval_org,
               test_generated,test_org)
         
-        train_true = _get_original_ts(train_qds, ts.id(), window_length)
+        train_true = _get_original_ts(train_qds, ts.id(), window_length, len(train_generated.tokens))
         train_metric.append(QMetric(train_true, train_generated))
-        eval_true =_get_original_ts(eval_qds, ts.id(), window_length)
+        eval_true =_get_original_ts(eval_qds, ts.id(), window_length, len(eval_generated.tokens))
         eval_metric.append(QMetric(eval_true, eval_generated))
-        test_true =_get_original_ts(test_qds, ts.id(), window_length)
+        test_true =_get_original_ts(test_qds, ts.id(), window_length, len(test_generated.tokens))
         test_metric.append(QMetric(test_true, test_generated))    
     metric ={
         **{"Overall (avg on test splits)": _get_avg_metrics(test_metric)},
@@ -81,14 +81,14 @@ def _split_data(generated, window_length):
     return original_from_generated, generated
 
 
-def _get_original_ts(qds, ts_id, window_length):
+def _get_original_ts(qds, ts_id, window_length, fixed_length):
     """
     Return original ts without first window
     """
     unbatched_ts = qds.get_unbatched(ts_id, _quantized=True)
     return QTimeSeries(ts=qds.get_unbatched(ts_id),
-                       bin_idx=np.asarray(unbatched_ts.tokens[window_length:]),
-                       bin_val=np.asarray(unbatched_ts.tokens_y[window_length:]))
+                       bin_idx=np.asarray(unbatched_ts.tokens[window_length:window_length+fixed_length]),
+                       bin_val=np.asarray(unbatched_ts.tokens_y[window_length:window_length+fixed_length]))
     
 
 def _plot(ts,train_qds, test_qds, eval_qds,

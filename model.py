@@ -242,7 +242,7 @@ class BertModel(nn.Module, QModel):
     @typechecked
     def predict(self, y: Union[TensorType[-1], TensorType[-1, -1]]) -> TensorType:
         self.eval()
-        return F.softmax(self.model(input_ids=y.unsqueeze(0)).logits.squeeze(0), dim=-1).argmax(dim=-1)
+        return F.softmax(self.model(input_ids=y.unsqueeze(0)).logits[0][-2], dim=-1).argmax(dim=-1)
         
     @typechecked
     def generate(self, 
@@ -258,7 +258,12 @@ class BertModel(nn.Module, QModel):
                                      _time_series,
                                      self.mask_token,
                                      self.sep_token))
-            predicted_token = self.predict(_time_series)[-2]# get [MASK] prediction
+            outputs = self.model(input_ids=_time_series.unsqueeze(0))
+            predicted_token = outputs.logits[0][-2]
+            predicted_token = torch.nn.functional.softmax(predicted_token)
+            predicted_token = torch.argmax(predicted_token)
+            
+            #predicted_token = self.predict(_time_series)# get [MASK] prediction
             _time_series = torch.cat((_time_series[2:-2], predicted_token.unsqueeze(0)))
             full_time_series = torch.cat((full_time_series, predicted_token.unsqueeze(0)), dim=-1)
             
@@ -339,11 +344,8 @@ class GPTModel(nn.Module, QModel):
     @typechecked
     def predict(self, y: Union[TensorType[-1], TensorType[-1, -1]]) -> TensorType:
         self.eval()
-        test_1 = self.model(input_ids=y.unsqueeze(0)).logits
-        test_2 = test_1.squeeze(0)
-        test_3 = F.softmax(test_2, dim=-1)
-        test_4 = test_3.argmax(dim=-1)
-        return F.softmax(self.model(input_ids=y.unsqueeze(0)).logits.squeeze(0), dim=-1).argmax(dim=-1)
+        return F.softmax(self.model(input_ids=y.unsqueeze(0)).logits[0][-1],dim=-1).argmax(dim=-1)
+        #return F.softmax(self.model(input_ids=y.unsqueeze(0)).logits.squeeze(0), dim=-1).argmax(dim=-1)
         
     @typechecked
     def generate(self, 
@@ -355,9 +357,13 @@ class GPTModel(nn.Module, QModel):
         _time_series = time_series.clone()
         full_time_series = _time_series.clone()
         for _ in range(horizon):
-            # _time_series = torch.cat((_time_series,
-            #                          self.mask_token))
-            predicted_token = self.predict(_time_series)[-1]
+            _time_series = torch.cat((_time_series,
+                                     self.mask_token))
+            #predicted_token = self.predict(_time_series)
+            outputs = self.model(input_ids=_time_series.unsqueeze(0))
+            predicted_token = outputs.logits[0][-1]
+            predicted_token = torch.nn.functional.softmax(predicted_token)
+            predicted_token = torch.argmax(predicted_token)
             _time_series = torch.cat((_time_series[1:-1], predicted_token.unsqueeze(0)))
             full_time_series = torch.cat((full_time_series, predicted_token.unsqueeze(0)), dim=-1)
             
