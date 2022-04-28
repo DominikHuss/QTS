@@ -191,7 +191,7 @@ class QDatasetForTransformerModels(QDatasetBase):
         num_bins = tsq.num_bins
         num_tokens = tokens.shape[0]
 
-        t = torch.zeros((num_tokens, num_all_bins)).scatter(-1, tokens.unsqueeze(-1), 1)
+        t = torch.zeros((num_tokens, num_all_bins),device=torch.device(self._global_cuda)).scatter(-1, tokens.unsqueeze(-1), 1)
         normal_t = t[...,:num_bins]
         special_t = t[...,num_bins:]
 
