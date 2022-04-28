@@ -154,7 +154,7 @@ class TransformerModel(nn.Module, QModel):
 
 
     def forward(self, y):
-        vac = ~torch.tril(torch.ones(y.shape[1], y.shape[1])).type(torch.BoolTensor)
+        vac = ~torch.tril(torch.ones(y.shape[1], y.shape[1])).type(torch.BoolTensor).to(device=torch.device(self._global_cuda))
 
         o = self.module["emb"](y)
         o = self.module["pos"](o)
@@ -187,7 +187,7 @@ class TransformerModel(nn.Module, QModel):
                                      "out_proj": output_proj})
         self.optimizer = torch.optim.Adam(self.module.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.criterion = SoftCrossEntropyLoss
-        if self._global_cuda == "gpu":
+        if self._global_cuda == "cuda":
             self.cuda()
 
 
@@ -296,7 +296,11 @@ class BertModel(nn.Module, QModel):
                             pad_token_id=self.pad_token.item())
         self.model =  BertForMaskedLM(config)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=5e-5, weight_decay=self.weight_decay)
-        if self._global_cuda == "gpu":
+        self.cls_token = self.cls_token.to(device=torch.device(self._global_cuda))
+        self.sep_token = self.sep_token.to(device=torch.device(self._global_cuda))
+        self.mask_token = self.mask_token.to(device=torch.device(self._global_cuda))
+        self.pad_token = self.pad_token.to(device=torch.device(self._global_cuda))
+        if self._global_cuda == "cuda":
             self.cuda()
 
 
@@ -394,7 +398,8 @@ class GPTModel(nn.Module, QModel):
                             )
         self.model =  GPT2LMHeadModel(config)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        if self._global_cuda == "gpu":
+        self.mask_token = self.mask_token.to(device=torch.device(self._global_cuda))
+        if self._global_cuda == "cuda":
             self.cuda()
 
 
@@ -478,12 +483,14 @@ class QModelContainer():
             if horizon is None:
                 horizon = int(y.get_unbatched(id).length()-window_length)
             _y = _y[:window_length]
-        y_hat = self.model.generate(_y, horizon=horizon, stochastic=stochastic)
+        y_hat = self.model.generate(_y, horizon=horizon, stochastic=stochastic).to(device=torch.device(self._global_cuda))
 
         if isinstance(y, torch.Tensor):
             return y_hat
-        qts.tokens_y = torch.take(torch.from_numpy(self.quantizer.bins_values), y_hat).numpy()
-        qts.tokens = y_hat.numpy()
+        qts.tokens_y = torch.take(torch.from_numpy(
+            self.quantizer.bins_values).to(device=torch.device(self._global_cuda)),
+            y_hat).cpu().numpy()
+        qts.tokens = y_hat.cpu().numpy()
         return qts
 
     def _build(self):
