@@ -1,114 +1,124 @@
+from operator import ge
 import os
 import json
 import numpy as np
 from decorators import get_global_args
-from _factory import QFactory, TransformerFactory, BertFactory, GPTFactory
+from _factory import FACTORIES
 from plot import Plotter
 from preprocessing import TimeSeriesQuantizer, TimeSeries, QTimeSeries
 from metric import QMetric
 
+
 @get_global_args
-def process_input(_global_input_dir, _global_model, _global_window_length, **kwargs) -> QFactory:
+def main(_global_input_dir,
+         _global_model,
+         _global_cuda,
+         **kwargs):
+    print("Main script start")
+    print("="*20)
+    print("Model: ", _global_model)
+    print("Data: ", _global_input_dir)
+    print("Cuda: ", _global_cuda)
+    print("="*20)
+    
+    train_qds, eval_qds, test_qds, qmc = _process_input(_global_input_dir, _global_model)
+    
+    print("Training start")
+    qmc.train(train_qds, eval_qds)
+    print("Training end")
+    print("="*20)
+    train_metric, eval_metric, test_metric = [],[],[]
+    for id_ ,(train_ts, eval_ts, test_ts) in enumerate(zip(train_qds.raw_unbatched_data,
+                                          eval_qds.raw_unbatched_data,
+                                          test_qds.raw_unbatched_data)):
+        train_first_window, train_org = _split_original_ts(train_qds, id_)
+        eval_first_window, eval_org = _split_original_ts(eval_qds, id_)
+        test_first_window, test_org =_split_original_ts(test_qds, id_)
+        
+        fix_horizon = 1 if _global_model == "transformer" else 0
+        train_generated = _get_only_generated(qmc, len(train_org.tokens) + fix_horizon, train_qds, id_)
+        eval_generated = _get_only_generated(qmc, len(eval_org.tokens) + fix_horizon, train_qds, id_)
+        test_generated = _get_only_generated(qmc, len(test_org.tokens) + fix_horizon, test_qds, id_)
+        
+        if id_  % 10 == 0:
+            _plot(train_ts, eval_ts, test_ts,
+                  train_generated,train_first_window,
+                  eval_generated,eval_first_window,
+                  test_generated,test_first_window)
+        
+    
+        train_metric.append(QMetric(train_org, train_generated))
+        eval_metric.append(QMetric(eval_org, eval_generated))
+        test_metric.append(QMetric(test_org, test_generated))    
+    metric ={
+        **{"Overall (avg on test splits)": _get_avg_metrics(test_metric)},
+        **{i: {
+            "train": train_metric[i].__dict__,
+            "eval": eval_metric[i].__dict__,
+            "test": test_metric[i].__dict__
+            } for i in range(len(train_metric))}
+    }
+    with open('./plots/metrics.json', 'w') as f:
+        json.dump(metric, f, indent=4)
+    print("="*20)
+    print("Main script end")
+
+
+def _process_input(input_dir, model): 
     ts = []
-    for i,file in enumerate(os.listdir(_global_input_dir)):
+    i = 0 #don't use enumerate!
+    for file in os.listdir(input_dir):
         if file == 'plots' or file == "params.json":
             continue
-        y = np.loadtxt(os.path.join(_global_input_dir, file), delimiter=",")
+        y = np.loadtxt(os.path.join(input_dir, file), delimiter=",")
         x = np.arange(len(y))
-        ts.append(TimeSeries(x, y, f"ts{i}")) 
-    factories = {
-        "transformer": TransformerFactory(ts),
-        "bert": BertFactory(ts),
-        "gpt": GPTFactory(ts)
-    }
-    return factories[_global_model],  _global_window_length
-
-
-def main(factory: QFactory, window_length: int):
+        ts.append(TimeSeries(x, y, f"{i}"))
+        i += 1 
+    factory = FACTORIES[model](ts)
     train_qds = factory.get_dataset(split="train", batch=True)
     eval_qds = factory.get_dataset(split="eval", batch=True)
     test_qds = factory.get_dataset(split="test", batch=True)
     qmc = factory.get_container()
     
-    qmc.train(train_qds, eval_qds)
+    return train_qds, eval_qds, test_qds, qmc
+
+def _get_only_generated(qmc,
+                        horizon,
+                        qds,
+                        id_):
+    generated = qmc.generate(qds,
+                        id=str(id_),
+                        horizon=int(horizon))
+    generated.tokens = generated.tokens[qmc._global_window_length:]
+    generated.tokens_y = generated.tokens_y[qmc._global_window_length:]
     
-    train_metric, eval_metric, test_metric = [],[],[]
-    for i, ts in enumerate(train_qds.raw_unbatched_data):
-        train_org, train_generated = _split_data(qmc.generate(train_qds,
-                                                   id=ts.id(),
-                                                   horizon=int(train_qds.get_unbatched(ts.id()).length()-window_length)),
-                                        window_length)
-        eval_org, eval_generated = _split_data(qmc.generate(eval_qds,
-                                                            id=ts.id(),
-                                                            horizon=int(eval_qds.get_unbatched(ts.id()).length()-window_length)),
-                                               window_length)
-        test_org, test_generated = _split_data(qmc.generate(test_qds,
-                                                            id=ts.id(),
-                                                            horizon=int(test_qds.get_unbatched(ts.id()).length()-window_length)),
-                                              window_length)
-        _plot(ts,train_qds,test_qds,eval_qds,
-              train_generated,train_org,
-              eval_generated,eval_org,
-              test_generated,test_org)
-        
-        train_true = _get_original_ts(train_qds, ts.id(), window_length, len(train_generated.tokens))
-        train_metric.append(QMetric(train_true, train_generated))
-        eval_true =_get_original_ts(eval_qds, ts.id(), window_length, len(eval_generated.tokens))
-        eval_metric.append(QMetric(eval_true, eval_generated))
-        test_true =_get_original_ts(test_qds, ts.id(), window_length, len(test_generated.tokens))
-        test_metric.append(QMetric(test_true, test_generated))    
-    metric ={
-        **{"Overall (avg on test splits)": _get_avg_metrics(test_metric)},
-        **{ts_i: {
-            "train": train_metric[i].__dict__,
-            "eval": eval_metric[i].__dict__,
-            "test": test_metric[i].__dict__
-            } for ts_i in range(len(train_metric))}
-    }
-    with open('./plots/metrics.json', 'w') as f:
-        json.dump(metric, f, indent=4)
+    return  generated
+
+
+def _split_original_ts(qds,id_):
+    (first_window, _),_, _ = qds.get_batched(str(id_),_all=True)
+    rest = qds.get_unbatched(str(id_), _quantized=True)
+    rest.tokens = rest .tokens[first_window.length():]
+    rest .tokens_y = rest .tokens_y[first_window.length():]
+    return first_window, rest
     
 
-def _split_data(generated, window_length):
-    original_from_generated = QTimeSeries(TimeSeries(generated.ts.x[:window_length],
-                                                generated.ts.y[:window_length],
-                                                generated.id()),
-                                    generated.tokens[:window_length],
-                                    generated.tokens_y[:window_length])
-    generated.tokens = generated.tokens[window_length:]
-    generated.ts.x = np.array([generated.ts.x[0] + window_length])
-    generated.tokens_y = generated.tokens_y[window_length:]
-    return original_from_generated, generated
-
-
-def _get_original_ts(qds, ts_id, window_length, fixed_length):
-    """
-    Return original ts without first window
-    """
-    unbatched_ts = qds.get_unbatched(ts_id, _quantized=True)
-    return QTimeSeries(ts=qds.get_unbatched(ts_id),
-                       bin_idx=np.asarray(unbatched_ts.tokens[window_length:window_length+fixed_length]),
-                       bin_val=np.asarray(unbatched_ts.tokens_y[window_length:window_length+fixed_length]))
-    
-
-def _plot(ts,train_qds, test_qds, eval_qds,
-          train_generated, train_org,
-          eval_generated, eval_org,
-          test_generated, test_org):
+def _plot(train_ts, eval_ts, test_ts,
+          train_generated, train_first_window,
+          eval_generated, eval_first_window,
+          test_generated, test_first_window):
     plot = Plotter(TimeSeriesQuantizer(), "plots/")
-    plot.plot(ts, label="true")
-    plot.plot(train_qds.get_unbatched(ts.id()), label="train")
-    plot.plot(eval_qds.get_unbatched(ts.id()), label="eval")
-    #plot.plot(QDatasetForHuggingFaceModels(ts, split="eval", batch=False).raw_data[i].ts, label="eval") #error with eval_qds
-    plot.plot(test_qds.get_unbatched(ts.id()),  label="test")
-    plot.plot(train_org, mfc='blue', mec='blue', c="blue")
+    plot.plot(train_ts, label="train")
+    plot.plot(eval_ts, label="eval")
+    plot.plot(test_ts,  label="test")
+    plot.plot(train_first_window, mfc='blue', mec='blue', c="blue")
     plot.plot(train_generated)
-    plot.plot(eval_org, mfc='blue', mec='blue', c="blue")
+    plot.plot(eval_first_window, mfc='blue', mec='blue', c="blue")
     plot.plot(eval_generated)
-    plot.plot(test_org, mfc='blue', mec='blue', c="blue")
+    plot.plot(test_first_window, mfc='blue', mec='blue', c="blue")
     plot.plot(test_generated)
     
-    plot.save(f"{ts.id()}.png")
+    plot.save(f"{train_ts.id()}.png")
     
 def _get_avg_metrics(metrics):
     return {
@@ -119,8 +129,7 @@ def _get_avg_metrics(metrics):
 
 
 if __name__ == "__main__":
-    factory, window_length = process_input()
-    main(factory, window_length)
+    main()
     exit()
 
     

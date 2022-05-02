@@ -3,7 +3,6 @@ from preprocessing import TimeSeriesQuantizer
 from dataset import QDataset, QDatasetForTransformerModels, QDatasetForHuggingFaceModels
 from model import TransformerModel, BertModel, GPTModel, QModelContainer
 
-
 class QFactory(abc.ABC):
     def __init__(self, ts) -> None:
         self.ts = ts
@@ -48,3 +47,9 @@ class GPTFactory(QFactory):
         model = GPTModel(mask_token=quant.special_tokens['mask'],
                          vocab_size=len(quant.bins_indices))
         return QModelContainer(model=model, quantizer=quant)
+
+    
+FACTORIES ={"transformer": TransformerFactory,
+            "bert": BertFactory,
+            "gpt": GPTFactory
+}
