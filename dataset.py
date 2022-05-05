@@ -122,7 +122,7 @@ class QDatasetBase(QDataset):
                 length += 1
                 if start == -1:
                     start = i
-                    qts = copy.copy(self.raw_data[i])
+                    qts = copy.deepcopy(self.raw_data[i])
                     prepped_y = self.data[i]["y"] #Exception?
             else:
                 if start != -1:

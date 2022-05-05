@@ -80,7 +80,7 @@ class TransformerModel(nn.Module, QModel):
             loss = self.criterion(pred, true)
             loss.backward()
             self.optimizer.step()
-            epoch_loss += loss
+            epoch_loss += loss.item()
         print(f"Epoch {epoch}: Loss = {epoch_loss/len(train_dataloader)}")
 
     @typechecked
@@ -108,20 +108,20 @@ class TransformerModel(nn.Module, QModel):
                  *,
                  epoch: int = -1,
                  _dataset: str = "EVAL"):
-        
-        self.eval()
-        eval_loss = 0
-        for batch in eval_dataloader:
-            y_hat = self.forward(batch["y"])
-            #true = batch["y_hat"][batch["mask"]]
-            true = batch["y_hat_probs"][batch["mask"]]
-            pred = y_hat[batch["mask"]]
-            loss = self.criterion(pred, true)
-            eval_loss += loss
-        if epoch >= 0:
-            print(f"{_dataset} -- Epoch {epoch}: Loss = {eval_loss/len(eval_dataloader)}")
-        else:
-            print(f"{_dataset} -- Loss = {eval_loss/eval_dataloader}")
+        with torch.no_grad():
+            self.eval()
+            eval_loss = 0
+            for batch in eval_dataloader:
+                y_hat = self.forward(batch["y"])
+                #true = batch["y_hat"][batch["mask"]]
+                true = batch["y_hat_probs"][batch["mask"]]
+                pred = y_hat[batch["mask"]]
+                loss = self.criterion(pred, true)
+                eval_loss += loss.item()
+            if epoch >= 0:
+                print(f"{_dataset} -- Epoch {epoch}: Loss = {eval_loss/len(eval_dataloader)}")
+            else:
+                print(f"{_dataset} -- Loss = {eval_loss/eval_dataloader}")
 
     def load(self, *args, **kwargs):
         return True
