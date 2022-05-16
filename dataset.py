@@ -58,7 +58,7 @@ class QDatasetBase(QDataset):
             self.raw_data = _data_list
         self.split = split
         self.batch = batch
-        self.mlm_masked_probability = 0.20 #TO DO: add as args add as param
+        self.mlm_masked_probability = 0.15 #TO DO: add as args add as param
         self.mlm_non_masked_value = -100 #TO DO: add as args add as param
         self.mlm_masked_token_prob = 0.8 #TO DO: add as args add as param
         self.mlm_random_token_prob = 0.1 #TO DO: add as args add as param
@@ -129,14 +129,18 @@ class QDatasetBase(QDataset):
                     break
         if prepped_y is None:
             warnings.warn(f"No mini-batches of a QTimeSeries with matching id='{id}' were found in the QDataset! Returning None")
+        if isinstance(prepped_y, np.ndarray):
+            prepped_y = torch.from_numpy(prepped_y).to(device=self._global_cuda)
         return (qts, prepped_y), start, length
             
     def __len__(self):
         return len(self.data)
 
 
+
+
 @parse_args(args_prefix="qds")
-class QDatasetForTransformerModels(QDatasetBase):
+class QDatasetForTransformerARModel(QDatasetBase):
     @typechecked
     def __init__(self, 
                  _data: Union[np.ndarray, List[np.ndarray], TimeSeries, List[TimeSeries], QTimeSeries, List[QTimeSeries]],
@@ -170,18 +174,12 @@ class QDatasetForTransformerModels(QDatasetBase):
               
     def _get_y(self, idx):
         tokens, _, _, _ = self.raw_data[idx].get(self.split if self.inner_split else "none")
-        if self.objective == "ar":
-            tokens = tokens[:-1]
-        else:
-           raise NotImplementedError()
+        tokens = tokens[:-1]
         return torch.from_numpy(tokens).to(device=torch.device(self._global_cuda))
 
     def _get_y_hat(self, idx):
         tokens, _, _, _ = self.raw_data[idx].get(self.split if self.inner_split else "none")
-        if self.objective == "ar": 
-            tokens = tokens[1:]
-        else:
-            raise NotImplementedError()
+        tokens = tokens[1:]
         return torch.from_numpy(tokens).to(device=torch.device(self._global_cuda))
 
     def _get_y_hat_probs(self, idx):
@@ -206,10 +204,7 @@ class QDatasetForTransformerModels(QDatasetBase):
     def _get_mask(self, idx):
         l = self.raw_data[idx].length(self.split if self.inner_split else "none") - 1
         mask = torch.zeros((l), dtype=torch.bool)
-        if self.objective == "ar":
-            mask[-self.num_last_unmasked:] = 1
-        else:
-            raise NotImplementedError("MLM isn't implemented yet.")
+        mask[-self.num_last_unmasked:] = 1
         return mask.to(device=torch.device(self._global_cuda))
 
     def _build(self):
@@ -217,6 +212,89 @@ class QDatasetForTransformerModels(QDatasetBase):
                                "y_hat": self._get_y_hat(idx),
                                "mask": self._get_mask(idx),
                                "y_hat_probs": self._get_y_hat_probs(idx)} for idx in range(len(self.raw_data))} 
+
+
+@parse_args(args_prefix="qds")
+class QDatasetForTransformerMLMModel(QDatasetBase):
+    @typechecked
+    def __init__(self, 
+                 _data: Union[np.ndarray, List[np.ndarray], TimeSeries, List[TimeSeries], QTimeSeries, List[QTimeSeries]],
+                 split: Literal["train", "eval", "test", "none"] = "none",
+                 *,
+                 batch: bool = False,
+                 soft_labels: bool = False,
+                 random_shifts: bool = False) -> None:
+        super().__init__(_data, split, batch= batch)
+        self.soft_labels = soft_labels
+        self.random_shifts = random_shifts  
+        
+    def __getitem__(self, idx):
+        return {"y": self._get_mlm(idx),
+                "y_hat_probs": self.data[idx]["y_hat_probs"],
+                "mask": self.mask,
+                "mask_attention": self.mask_attention,
+                "idx": torch.tensor([idx])}
+    
+    def _get_mlm(self, idx):
+        y = self.data[idx]['y'].clone()
+        masked_tokens_idx = torch.bernoulli(torch.full(y.shape, self.mlm_masked_token_prob)).bool().to(device=torch.device(self._global_cuda)) & self.mask
+        y[masked_tokens_idx] = self.tsq.special_tokens['mask']
+        random_tokens_idx = torch.bernoulli(torch.full(y.shape, self.mlm_random_token_prob)).bool().to(device=torch.device(self._global_cuda)) & self.mask & ~masked_tokens_idx
+        random_tokens = torch.randint(self.tsq.num_bins, y.shape, dtype=torch.long, device=torch.device(self._global_cuda))
+        y[random_tokens_idx] = random_tokens[random_tokens_idx]
+        return y
+    
+    def _get_y(self, idx):
+        tokens, _, _, _ = self.raw_data[idx].get(self.split if self.inner_split else "none")
+        return torch.from_numpy(tokens).to(device=torch.device(self._global_cuda))
+    
+    def _get_y_hat_probs(self, idx):
+        tokens = self._get_y(idx)
+        tsq = TimeSeriesQuantizer()
+        num_all_bins = tsq.bins_indices.shape[0]
+        num_bins = tsq.num_bins
+        num_tokens = tokens.shape[0]
+
+        t = torch.zeros((num_tokens, num_all_bins),device=torch.device(self._global_cuda)).scatter(-1, tokens.unsqueeze(-1), 1)
+        normal_t = t[...,:num_bins]
+        special_t = t[...,num_bins:]
+
+        kernel = torch.tensor([[[0.05, 0.1, 1, 0.1, 0.05]]]).repeat(num_tokens, 1, 1)
+
+        if self.soft_labels:
+            normal_t = F.conv1d(normal_t.unsqueeze(0), kernel, groups=num_tokens, padding="same")
+            t = torch.cat((normal_t.squeeze(0), special_t), dim=-1)
+            t = t/t.sum(dim=-1, keepdim=True)
+        return t.to(device=torch.device(self._global_cuda))
+    
+    def __get_mask(self):
+        probability_matrix = torch.full((self._global_window_length,),
+                                        self.mlm_masked_probability,
+                                        device=torch.device(self._global_cuda))
+        repeat = True
+        while repeat: 
+            mask =torch.bernoulli(probability_matrix).bool().to(device=torch.device(self._global_cuda))
+            if mask.any():
+                repeat = False
+        return mask
+    def __get_mask_attention(self):
+        mask_attention = torch.zeros((self.mask.shape[-1], self.mask.shape[-1]),
+                                dtype=torch.bool,
+                                device=torch.device(self._global_cuda)) # SxS
+        masked_positions = (self.mask == True).nonzero(as_tuple=True)[0]
+        for pos in masked_positions:
+            mask_attention[:,pos] = True
+            mask_attention[pos, pos] = False
+        return mask_attention
+
+    
+    def _build(self):
+        self.data = {idx:{"y": self._get_y(idx),
+                          "y_hat_probs": self._get_y_hat_probs(idx)
+                        } for idx in range(len(self.raw_data))}
+        
+        self.mask = self.__get_mask()
+        self.mask_attention = self.__get_mask_attention() 
 
 @parse_args(args_prefix="qds")
 class QDatasetForHuggingFaceModels(QDatasetBase):
@@ -230,21 +308,23 @@ class QDatasetForHuggingFaceModels(QDatasetBase):
        
     def __getitem__(self, idx):
         if self.objective == "mlm":
-           return self._get_mlm(idx)
+           tokens, labels = self._get_mlm(idx)
+           true = torch.from_numpy(self.data[idx]['y'])
+           return (torch.from_numpy(tokens).to(device=self._global_cuda), torch.from_numpy(labels).to(device=self._global_cuda), true)
         elif self.objective == "ar":
             return self._get_ar(idx)
     
     def _get_mlm(self, idx):
-        tokens, labels = self.data[idx]['y'].clone(), self.data[idx]['y'].clone()
-        special_tokens_matrix = tokens >= self.tsq.num_bins  
-        probability_matrix = torch.full(tokens.shape, self.mlm_masked_probability,device=torch.device(self._global_cuda))
-        probability_matrix.masked_fill_(special_tokens_matrix, value=0.0)
-        masked_idx = torch.bernoulli(probability_matrix).bool().to(device=torch.device(self._global_cuda))
+        tokens, labels = self.data[idx]['y'].copy(), self.data[idx]['y'].copy()
+        special_tokens_matrix = (tokens >= self.tsq.num_bins)
+        probability_matrix = np.ma.masked_array(np.full(tokens.shape, self.mlm_masked_probability), special_tokens_matrix)
+        probability_matrix = probability_matrix.filled(fill_value=0.0)
+        masked_idx = np.random.binomial(n=1,p=probability_matrix).astype(bool)
         labels[~masked_idx] = self.mlm_non_masked_value
-        masked_tokens_idx = torch.bernoulli(torch.full(tokens.shape, self.mlm_masked_token_prob)).bool().to(device=torch.device(self._global_cuda)) & masked_idx
+        masked_tokens_idx = np.random.binomial(n=1,p=np.full(tokens.shape, self.mlm_masked_token_prob)).astype(bool) & masked_idx
         tokens[masked_tokens_idx] = self.tsq.special_tokens['mask']
-        random_tokens_idx = torch.bernoulli(torch.full(tokens.shape, self.mlm_random_token_prob)).bool().to(device=torch.device(self._global_cuda)) & masked_idx & ~masked_tokens_idx
-        random_tokens = torch.randint(self.tsq.num_bins, tokens.shape, dtype=torch.long, device=torch.device(self._global_cuda))
+        random_tokens_idx = np.random.binomial(n=1, p=np.full(tokens.shape, self.mlm_random_token_prob)).astype(bool) & masked_idx & ~masked_tokens_idx
+        random_tokens = np.random.randint(0, self.tsq.num_bins, tokens.shape)
         tokens[random_tokens_idx] = random_tokens[random_tokens_idx]
         return (tokens, labels)
     
@@ -258,7 +338,37 @@ class QDatasetForHuggingFaceModels(QDatasetBase):
             tokens = np.concatenate(([self.tsq.special_tokens['cls']],
                                         tokens,
                                         [self.tsq.special_tokens['sep']]))
-        return torch.from_numpy(tokens).to(device=torch.device(self._global_cuda))
+        return tokens#torch.from_numpy(tokens).to(device=torch.device(self._global_cuda))
     
     def _build(self):
         self.data = {idx: {"y":self._get_y(idx)} for idx in range(len(self.raw_data))}
+        
+        
+"""
+1)
+def __get_mask_attention(self):
+mask_attention = torch.zeros((self.mask.shape[-1], self.mask.shape[-1]),
+                                dtype=torch.bool,
+                                device=torch.device(self._global_cuda)) # SxS
+masked_positions = (self.mask == True).nonzero(as_tuple=True)[0]
+for pos in masked_positions:
+    mask_attention[:,pos] = True
+    mask_attention[pos, pos] = False
+return mask_attention
+2)
+ return self.mask.repeat(self.mask.shape[-1], 1)
+
+
+3)tokens, labels = self.data[idx]['y'].clone(), self.data[idx]['y'].clone()
+        special_tokens_matrix = tokens >= self.tsq.num_bins  
+        probability_matrix = torch.full(tokens.shape, self.mlm_masked_probability,device=torch.device(self._global_cuda))
+        probability_matrix.masked_fill_(special_tokens_matrix, value=0.0)
+        masked_idx = torch.bernoulli(probability_matrix).bool().to(device=torch.device(self._global_cuda))
+        labels[~masked_idx] = self.mlm_non_masked_value
+        masked_tokens_idx = torch.bernoulli(torch.full(tokens.shape, self.mlm_masked_token_prob)).bool().to(device=torch.device(self._global_cuda)) & masked_idx
+        tokens[masked_tokens_idx] = self.tsq.special_tokens['mask']
+        random_tokens_idx = torch.bernoulli(torch.full(tokens.shape, self.mlm_random_token_prob)).bool().to(device=torch.device(self._global_cuda)) & masked_idx & ~masked_tokens_idx
+        random_tokens = torch.randint(self.tsq.num_bins, tokens.shape, dtype=torch.long, device=torch.device(self._global_cuda))
+        tokens[random_tokens_idx] = random_tokens[random_tokens_idx]
+        return (tokens, labels)
+"""

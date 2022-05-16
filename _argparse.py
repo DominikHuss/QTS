@@ -1,14 +1,13 @@
+from email.policy import default
 import os
 import json
 import sys
-import warnings
 import torch
 from typing import Dict, List
 from argparse import ArgumentParser, Namespace
 
 
 def validate_args(args: Namespace) -> Namespace:
-    #TO DO: assert qds == qtz == qmc window length
     args.trans_num_embedding = args.qtz_num_bins + args.qtz_special_bins
     args.qmc_num_last_unmasked = args.qds_num_last_unmasked
 
@@ -78,8 +77,7 @@ def _parse_arguments():
     parser.add_argument("--cuda", action="store_true")
     parser.add_argument("--SMOKE-TEST", action="store_true")
     parser.add_argument("--window-length", type=int, default=20)
-    parser.add_argument("--model", choices=['transformer','bert',"gpt"], default="transformer")
-    #parser.add_argument("--objective", choices=["ar", "mlm"], default="ar")
+    parser.add_argument("--model", choices=['transformer_ar', 'transformer_mlm', 'bert', "gpt"], default="transformer_ar")
     parser.add_argument("--qtz-l-bound", type=float, default= None)
     parser.add_argument("--qtz-u-bound", type=float, default= None)
     parser.add_argument("--qtz-num-bins", type=int, default=20)
@@ -90,7 +88,6 @@ def _parse_arguments():
     parser.add_argument("--ts-train-split", type=float, default=0.7)
     parser.add_argument("--ts-eval-split", type=float, default=0.2)
     parser.add_argument("--qds-num-last-unmasked", type=int, default=1) # values different than 1 break the training loop (needs ugly reshapes)
-    parser.add_argument("--qds-objective", choices=["ar", "mlm"], default="ar")
     parser.add_argument("--qds-inner-split", action="store_true")
     parser.add_argument("--trans-num-embedding", type=int, default=13)
     parser.add_argument("--trans-att-num-heads", type=int, default=4)
@@ -102,6 +99,10 @@ def _parse_arguments():
     parser.add_argument("--trans-embedding-dim", type=int, default=64)
     parser.add_argument("--trans-lr", type=float, default=1e-4)
     parser.add_argument("--trans-weight-decay", type=float, default=1e-7)
+    parser.add_argument("--qmc-save-model-path", type=str, default=None) #assert save == load as warning
+    parser.add_argument("--qmc-load-model-path", type=str, default=None)
+    parser.add_argument("--qmc-checkpoints-epochs", type=int, default=10)
+    parser.add_argument("--qmc-from-saved-model", type=bool, default=False)
     parser.add_argument("--qmc-num-epochs", type=int, default=100)
     parser.add_argument("--qmc-batch-size", type=int, default=128)
     parser.add_argument("--qmc-shuffle", type=bool, default=False)

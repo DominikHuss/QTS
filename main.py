@@ -1,4 +1,3 @@
-from operator import ge
 import os
 import json
 import numpy as np
@@ -36,13 +35,13 @@ def main(_global_input_dir,
         eval_first_window, eval_org = _split_original_ts(eval_qds, id_)
         test_first_window, test_org =_split_original_ts(test_qds, id_)
         
-        fix_horizon = 1 if _global_model == "transformer" else 0
+        fix_horizon = 1 if _global_model == "transformer_ar" or _global_model == "transformer_mlm" else 0
         train_generated = _get_only_generated(qmc, len(train_org.tokens) + fix_horizon, train_qds, id_)
         eval_generated = _get_only_generated(qmc, len(eval_org.tokens) + fix_horizon, eval_qds, id_)
         test_generated = _get_only_generated(qmc, len(test_org.tokens) + fix_horizon, test_qds, id_)
         
        
-        if id_  % 10 == 0:
+        if id_  % 1 == 0:
             print(f"Plot {id_} ts")
             _plot(train_ts, eval_ts, test_ts,
                   train_generated,train_first_window,
@@ -62,7 +61,7 @@ def main(_global_input_dir,
     }
     print("="*20)
     print("Performance: ",metric['Overall (avg on test splits)'])
-    with open('./plots/metrics.json', 'w') as f:
+    with open('./plots_test/metrics.json', 'w') as f:
         json.dump(metric, f, indent=4)
     print("="*20)
     print("Main script end")

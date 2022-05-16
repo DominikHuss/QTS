@@ -18,6 +18,7 @@ patch_typeguard()
 
 def SoftCrossEntropyLoss(y_hat, labels):
         logprobs = torch.nn.functional.log_softmax(y_hat, dim=-1)
+        test = labels*logprobs
         return -(labels*logprobs).sum()/y_hat.shape[0]
 
 
