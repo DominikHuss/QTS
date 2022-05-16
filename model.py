@@ -2,6 +2,7 @@ import abc
 import warnings
 from typing import Union, Optional
 from numpy import save
+from pyparsing import col
 
 import torch
 import torch.nn as nn
@@ -84,7 +85,7 @@ class TransformerModel(nn.Module, QModel):
         self.train()
         for batch in train_dataloader:
             self.optimizer.zero_grad()
-            mask_attention = None if self.objective == 'ar' else batch["mask_attention"][0]
+            mask_attention = None if self.objective == 'ar' else batch["mask_attention"]
             y_hat = self.forward(batch["y"], mask_attention)
             true = batch["y_hat_probs"][batch["mask"]]
             pred = y_hat[batch["mask"]]
@@ -123,7 +124,7 @@ class TransformerModel(nn.Module, QModel):
             self.eval()
             eval_loss = 0
             for batch in eval_dataloader:
-                mask_attention = None if self.objective == 'ar' else batch["mask_attention"][0]
+                mask_attention = None if self.objective == 'ar' else batch["mask_attention"]
                 y_hat = self.forward(batch["y"], mask_attention)
                 true = batch["y_hat_probs"][batch["mask"]]
                 pred = y_hat[batch["mask"]]
@@ -170,7 +171,7 @@ class TransformerModel(nn.Module, QModel):
                 .type(torch.BoolTensor)
                 .to(device=torch.device(self._global_cuda))
                 if mask_attention is None else mask_attention)  
-
+        
         o = self.module["emb"](y)
         o = self.module["pos"](o)
         o = self.module["trans"](o, mask=vac)
@@ -437,15 +438,19 @@ class QModelContainer():
 
         train_dataset.random_shifts = True if self.random_shifts else False
         train_dataset.soft_labels = True if self.soft_labels else False
-
+        train_collate_fn = train_dataset.process_mlm if self._global_model == "transformer_mlm" else None
+        eval_collate_fn = eval_dataset.process_mlm if self._global_model == "transformer_mlm" else None
+        
         train_dataloader = DataLoader(train_dataset,
                                       batch_size=self.batch_size,
                                       shuffle=self.shuffle,
+                                      collate_fn=train_collate_fn,
                                       pin_memory=True,
                                       num_workers=4*torch.cuda.device_count())
         eval_dataloader = (DataLoader(eval_dataset,
                                       batch_size=self.batch_size,
                                       shuffle=self.shuffle,
+                                      collate_fn=eval_collate_fn,
                                       pin_memory=True,
                                       num_workers=4*torch.cuda.device_count())
                            if eval_dataset is not None else train_dataloader)

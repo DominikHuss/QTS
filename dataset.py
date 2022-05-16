@@ -1,7 +1,8 @@
 import warnings
 import copy
-from typing import Tuple, Union, List, Literal, Optional
 import abc
+from typing import Tuple, Union, List, Literal, Optional, Dict
+from collections import ChainMap
 
 import numpy as np
 import torch
@@ -229,20 +230,9 @@ class QDatasetForTransformerMLMModel(QDatasetBase):
         self.random_shifts = random_shifts  
         
     def __getitem__(self, idx):
-        return {"y": self._get_mlm(idx),
+        return {"y": self._get_y(idx),
                 "y_hat_probs": self.data[idx]["y_hat_probs"],
-                "mask": self.mask,
-                "mask_attention": self.mask_attention,
                 "idx": torch.tensor([idx])}
-    
-    def _get_mlm(self, idx):
-        y = self.data[idx]['y'].clone()
-        masked_tokens_idx = torch.bernoulli(torch.full(y.shape, self.mlm_masked_token_prob)).bool().to(device=torch.device(self._global_cuda)) & self.mask
-        y[masked_tokens_idx] = self.tsq.special_tokens['mask']
-        random_tokens_idx = torch.bernoulli(torch.full(y.shape, self.mlm_random_token_prob)).bool().to(device=torch.device(self._global_cuda)) & self.mask & ~masked_tokens_idx
-        random_tokens = torch.randint(self.tsq.num_bins, y.shape, dtype=torch.long, device=torch.device(self._global_cuda))
-        y[random_tokens_idx] = random_tokens[random_tokens_idx]
-        return y
     
     def _get_y(self, idx):
         tokens, _, _, _ = self.raw_data[idx].get(self.split if self.inner_split else "none")
@@ -267,21 +257,53 @@ class QDatasetForTransformerMLMModel(QDatasetBase):
             t = t/t.sum(dim=-1, keepdim=True)
         return t.to(device=torch.device(self._global_cuda))
     
+    @typechecked
+    def process_mlm(self, batch):
+            """
+            TODO: Process "masked language modeling" to qts. It's custom implementation of pytorch.Dataset collate_fn and
+            it should be using only as collate function. 
+            : Dict[str, torch.tensor["batch", "sequence", "feature"]]
+            -> Dict[str, torch.tensor["batch", "sequence", "feature"]]
+            """
+            _mask = self.__get_mask().to(device=torch.device(self._global_cuda))
+            mask = torch.stack([_mask for _ in range(len(batch))])
+            mask_attention = self.__get_mask_attention(_mask).to(torch.device(self._global_cuda))
+          
+            y = torch.stack([example['y'] for example in batch])
+            y = self.__get_mlm(y, mask)
+            y_hat_probs = torch.stack([example['y_hat_probs'] for example in batch])
+            idx = torch.stack([example['idx'] for example in batch])
+            
+            return {"y": y,
+                    "y_hat_probs":y_hat_probs,
+                    "mask": mask,
+                    "mask_attention": mask_attention,
+                    "idx": idx
+            }
+            
+    def __get_mlm(self, y, mask):
+        _y = y.clone()
+        masked_tokens_idx = torch.bernoulli(torch.full(_y.shape, self.mlm_masked_token_prob)).bool().to(device=torch.device(self._global_cuda)) & mask
+        _y[masked_tokens_idx] = self.tsq.special_tokens['mask']
+        random_tokens_idx = torch.bernoulli(torch.full(y.shape, self.mlm_random_token_prob)).bool().to(device=torch.device(self._global_cuda)) & mask & ~masked_tokens_idx
+        random_tokens = torch.randint(self.tsq.num_bins, y.shape, dtype=torch.long, device=torch.device(self._global_cuda))
+        _y[random_tokens_idx] = random_tokens[random_tokens_idx]
+        return _y
+    
     def __get_mask(self):
         probability_matrix = torch.full((self._global_window_length,),
-                                        self.mlm_masked_probability,
-                                        device=torch.device(self._global_cuda))
+                                        self.mlm_masked_probability)
         repeat = True
         while repeat: 
-            mask =torch.bernoulli(probability_matrix).bool().to(device=torch.device(self._global_cuda))
+            mask =torch.bernoulli(probability_matrix).bool()
             if mask.any():
                 repeat = False
         return mask
-    def __get_mask_attention(self):
-        mask_attention = torch.zeros((self.mask.shape[-1], self.mask.shape[-1]),
-                                dtype=torch.bool,
-                                device=torch.device(self._global_cuda)) # SxS
-        masked_positions = (self.mask == True).nonzero(as_tuple=True)[0]
+    
+    def __get_mask_attention(self, mask):
+        mask_attention = torch.zeros((mask.shape[-1], mask.shape[-1]),
+                                dtype=torch.bool) 
+        masked_positions = (mask == True).nonzero(as_tuple=True)[0]
         for pos in masked_positions:
             mask_attention[:,pos] = True
             mask_attention[pos, pos] = False
@@ -292,10 +314,7 @@ class QDatasetForTransformerMLMModel(QDatasetBase):
         self.data = {idx:{"y": self._get_y(idx),
                           "y_hat_probs": self._get_y_hat_probs(idx)
                         } for idx in range(len(self.raw_data))}
-        
-        self.mask = self.__get_mask()
-        self.mask_attention = self.__get_mask_attention() 
-
+     
 @parse_args(args_prefix="qds")
 class QDatasetForHuggingFaceModels(QDatasetBase):
     @typechecked

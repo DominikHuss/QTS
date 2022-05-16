@@ -41,7 +41,7 @@ def main(_global_input_dir,
         test_generated = _get_only_generated(qmc, len(test_org.tokens) + fix_horizon, test_qds, id_)
         
        
-        if id_  % 1 == 0:
+        if id_  % 10 == 0:
             print(f"Plot {id_} ts")
             _plot(train_ts, eval_ts, test_ts,
                   train_generated,train_first_window,
@@ -61,7 +61,7 @@ def main(_global_input_dir,
     }
     print("="*20)
     print("Performance: ",metric['Overall (avg on test splits)'])
-    with open('./plots_test/metrics.json', 'w') as f:
+    with open('./plots/metrics.json', 'w') as f:
         json.dump(metric, f, indent=4)
     print("="*20)
     print("Main script end")
