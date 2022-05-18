@@ -35,7 +35,7 @@ def main(_global_input_dir,
         eval_first_window, eval_org = _split_original_ts(eval_qds, id_)
         test_first_window, test_org =_split_original_ts(test_qds, id_)
         
-        fix_horizon = 1 if _global_model == "transformer_ar" or _global_model == "transformer_mlm" else 0
+        fix_horizon = 1 if _global_model == "transformer_ar" or _global_model == "transformer_mlm"  or _global_model == "gpt" else 0
         train_generated = _get_only_generated(qmc, len(train_org.tokens) + fix_horizon, train_qds, id_)
         eval_generated = _get_only_generated(qmc, len(eval_org.tokens) + fix_horizon, eval_qds, id_)
         test_generated = _get_only_generated(qmc, len(test_org.tokens) + fix_horizon, test_qds, id_)

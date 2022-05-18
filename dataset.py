@@ -331,7 +331,8 @@ class QDatasetForHuggingFaceModels(QDatasetBase):
            true = torch.from_numpy(self.data[idx]['y'])
            return (torch.from_numpy(tokens).to(device=self._global_cuda), torch.from_numpy(labels).to(device=self._global_cuda), true)
         elif self.objective == "ar":
-            return self._get_ar(idx)
+            tokens, labels = self._get_ar(idx)
+            return  (torch.from_numpy(tokens).to(device=self._global_cuda), torch.from_numpy(labels).to(device=self._global_cuda))
     
     def _get_mlm(self, idx):
         tokens, labels = self.data[idx]['y'].copy(), self.data[idx]['y'].copy()
@@ -348,7 +349,7 @@ class QDatasetForHuggingFaceModels(QDatasetBase):
         return (tokens, labels)
     
     def _get_ar(self, idx):
-        return (self.data[idx]['y'].clone(), self.data[idx]['y'].clone())
+        return (self.data[idx]['y'].copy(), self.data[idx]['y'].copy())
                 
     
     def _get_y(self, idx):
@@ -361,8 +362,74 @@ class QDatasetForHuggingFaceModels(QDatasetBase):
     
     def _build(self):
         self.data = {idx: {"y":self._get_y(idx)} for idx in range(len(self.raw_data))}
-        
-        
+
+@parse_args(args_prefix="qds")
+class QDatasetForBertModel(QDatasetBase):
+    @typechecked
+    def __init__(self, 
+                 _data: Union[np.ndarray, List[np.ndarray], TimeSeries, List[TimeSeries], QTimeSeries, List[QTimeSeries]],
+                 split: Literal["train", "eval", "test", "none"] = "none",
+                 *,
+                 batch: bool = False) -> None:
+        super().__init__(_data, split, batch= batch)
+       
+    def __getitem__(self, idx):
+        tokens, labels = self.__get_mlm(idx)
+        return {"input_ids": torch.from_numpy(tokens).to(device=self._global_cuda),
+                "labels": torch.from_numpy(labels).to(device=self._global_cuda)
+        } 
+       
+    def __get_mlm(self, idx):
+        tokens, labels = self.data[idx]['y'].copy(), self.data[idx]['y'].copy()
+        special_tokens_matrix = (tokens >= self.tsq.num_bins)
+        probability_matrix = np.ma.masked_array(np.full(tokens.shape, self.mlm_masked_probability), special_tokens_matrix)
+        probability_matrix = probability_matrix.filled(fill_value=0.0)
+        masked_idx = np.random.binomial(n=1,p=probability_matrix).astype(bool)
+        labels[~masked_idx] = self.mlm_non_masked_value
+        masked_tokens_idx = np.random.binomial(n=1,p=np.full(tokens.shape, self.mlm_masked_token_prob)).astype(bool) & masked_idx
+        tokens[masked_tokens_idx] = self.tsq.special_tokens['mask']
+        random_tokens_idx = np.random.binomial(n=1, p=np.full(tokens.shape, self.mlm_random_token_prob)).astype(bool) & masked_idx & ~masked_tokens_idx
+        random_tokens = np.random.randint(0, self.tsq.num_bins, tokens.shape)
+        tokens[random_tokens_idx] = random_tokens[random_tokens_idx]
+        return (tokens, labels)
+     
+    def _get_y(self, idx):
+        tokens, _, _, _ = self.raw_data[idx].get(self.split if self.inner_split else "none")
+        if self._global_model == "bert":
+            tokens = np.concatenate(([self.tsq.special_tokens['cls']],
+                                      tokens,
+                                     [self.tsq.special_tokens['sep']]))
+        return tokens
+    
+    def _build(self):
+        self.data = {idx: {"y":self._get_y(idx)} for idx in range(len(self.raw_data))}     
+
+
+@parse_args(args_prefix="qds")
+class QDatasetForHuggingFaceModels(QDatasetBase):
+    @typechecked
+    def __init__(self, 
+                 _data: Union[np.ndarray, List[np.ndarray], TimeSeries, List[TimeSeries], QTimeSeries, List[QTimeSeries]],
+                 split: Literal["train", "eval", "test", "none"] = "none",
+                 *,
+                 batch: bool = False) -> None:
+        super().__init__(_data, split, batch= batch)
+       
+    def __getitem__(self, idx):
+        tokens, labels = self.__get_ar(idx)
+        return {"input_ids": torch.from_numpy(tokens).to(device=self._global_cuda),
+                "labels": torch.from_numpy(labels).to(device=self._global_cuda)
+        }
+    
+    def __get_ar(self, idx):
+        return self.data[idx]['y'].copy(), self.data[idx]['y'].copy()
+                
+    def _get_y(self, idx):
+        tokens, _, _, _ = self.raw_data[idx].get(self.split if self.inner_split else "none")
+        return tokens
+    
+    def _build(self):
+        self.data = {idx: {"y":self._get_y(idx)} for idx in range(len(self.raw_data))}       
 """
 1)
 def __get_mask_attention(self):

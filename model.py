@@ -344,7 +344,7 @@ class GPTModel(nn.Module, QModel):
 
             self.optimizer.step()
             self.optimizer.zero_grad()
-            epoch_loss += loss
+            epoch_loss += loss.item()
         print(f"Epoch {epoch}: Loss = {epoch_loss/len(train_dataloader)}")
 
     def evaluate(self, 
@@ -356,10 +356,7 @@ class GPTModel(nn.Module, QModel):
         eval_loss = 0
         for (tokens, labels) in eval_dataloader:
             loss = self.model(input_ids=tokens, labels=labels).loss
-            loss.backward()
-            self.optimizer.step()
-            self.optimizer.zero_grad()
-            eval_loss += loss
+            eval_loss += loss.item()
         if epoch >= 0:
             print(f"{_dataset} -- Epoch {epoch}: Loss = {eval_loss/len(eval_dataloader)}")
         else:
@@ -381,14 +378,14 @@ class GPTModel(nn.Module, QModel):
         _time_series = time_series.clone()
         full_time_series = _time_series.clone()
         for _ in range(horizon):
-            _time_series = torch.cat((_time_series,
-                                     self.mask_token))
+            # _time_series = torch.cat((_time_series,
+            #                          self.mask_token))
             #predicted_token = self.predict(_time_series)
             outputs = self.model(input_ids=_time_series.unsqueeze(0))
             predicted_token = outputs.logits[0][-1]
             predicted_token = torch.nn.functional.softmax(predicted_token)
             predicted_token = torch.argmax(predicted_token)
-            _time_series = torch.cat((_time_series[1:-1], predicted_token.unsqueeze(0)))
+            _time_series = torch.cat((_time_series[1:], predicted_token.unsqueeze(0)))
             full_time_series = torch.cat((full_time_series, predicted_token.unsqueeze(0)), dim=-1)
             
         return full_time_series
@@ -479,7 +476,8 @@ class QModelContainer():
             warnings.warn("The model was not trained, or was reset!")
         
         if window_length is None:
-            if type(self.model).__name__ == TransformerModel.__name__:#isinstance(self.model, type(TransformerModel)): why doesn't work properly?
+            if (type(self.model).__name__ == TransformerModel.__name__
+                or type(self.model).__name__ == GPTModel.__name__):#isinstance(self.model, type(TransformerModel)): why doesn't work properly?
                 window_length = self._global_window_length - self.num_last_unmasked
             
             elif type(self.model).__name__ == BertModel.__name__:
