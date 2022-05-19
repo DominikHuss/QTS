@@ -11,6 +11,14 @@ patch_typeguard()
 
 @parse_args(args_prefix="ts")
 class TimeSeries():
+    """
+    Class representing time series.
+    :param np.ndarray x: Indexes of time series
+    :param np.ndarray y: Values of time series
+    :param str id: Id of time series
+    :param np.number min_y: Minimal value of time series
+    :param np.number max_y: Maximum value of time series  
+    """
     @typechecked
     def __init__(self, 
                  x: np.ndarray, 
@@ -86,6 +94,13 @@ class TimeSeries():
         
 
 class QTimeSeries():
+    """
+    Class representing quantized time series
+    
+    :param TimeSeries ts: Original time series
+    :param np.ndarray bin_idx: Quantized buckets (tokens) from time series
+    :param np.ndarray bin_val:  Values of buckets (tokens)
+    """
     @typechecked
     def __init__(self, 
                  ts: TimeSeries, 
@@ -124,11 +139,21 @@ class QTimeSeries():
 
 @parse_args(args_prefix="qtz")
 class TimeSeriesQuantizer():
+    """
+    Class representing quantizer.
+    """
     @typechecked
     def quantize(self, 
                  _time_series: Union[TimeSeries, List[TimeSeries]],
                  *,
                  batch: bool = False) -> Union[QTimeSeries, List[QTimeSeries]]:
+        """
+        Quantized time series to quantized version.
+        :param Union[TimeSeries, List[TimeSeries]] _time_series: Single time series or list of time series.
+        :param bool batch: Boolean value. If True quantizer batch given time series. Defaults to False.
+        :return: Quantized time series or list of time series; batched or not.
+        :rtype: Union[QTimeSeries, List[QTimeSeries]] 
+        """
         if isinstance(_time_series, list):
             time_series = _time_series
         else:
@@ -172,6 +197,13 @@ class TimeSeriesQuantizer():
               _time_series: List[TimeSeries],
               *,
               _padded: bool = True) -> List[TimeSeries]:
+        """
+        Batch given time series.
+        :param List[TimeSeries]: List of time series
+        :param bool _padded: Boolean value. If true perform right padding to window_length.
+        :return: Batched time series.
+        :rtype:  List[TimeSeries]
+        """
         time_series = []
         for ts in _time_series:
             if _padded and (n_padding := self._global_window_length - ts.length()) > 0: #:= works only with version python 3.8+ 
