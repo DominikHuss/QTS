@@ -12,8 +12,12 @@ from metric import QMetric
 def main(_global_input_dir,
          _global_model,
          _global_cuda,
+         _global_SMOKE_TEST,
          **kwargs):
-    print("Main script start")
+    if _global_SMOKE_TEST:
+        print("Smoke test start")
+    else:
+        print("Main script start")
     print("="*20)
     print("Model: ", _global_model)
     print("Data: ", _global_input_dir)
@@ -21,11 +25,13 @@ def main(_global_input_dir,
     print("="*20)
     
     train_qds, eval_qds, test_qds, qmc = _process_input(_global_input_dir, _global_model)
-    #print(vars(qmc.model))
     print("Training start")
     qmc.train(train_qds, eval_qds)
     print("Training end")
     print("="*20)
+    if _global_SMOKE_TEST:
+        print("Smoke test ends successfully")
+        exit()
     print("Plotting")
     train_metric, eval_metric, test_metric = [],[],[]
     for id_ ,(train_ts, eval_ts, test_ts) in enumerate(zip(train_qds.raw_unbatched_data,
