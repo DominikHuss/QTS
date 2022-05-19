@@ -1,17 +1,18 @@
 import torch
 import torch.nn as nn
-
 import math
-
-import warnings
-from typing import Union, Iterable, List, Literal, Optional
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
 patch_typeguard()
 
 
 class PositionalEncoding(nn.Module):
-
+    """
+    Class representing postional encoding using by `TransformerAR` and `TransformerMLM` model.
+        It is default implementation of positional encoding from official pytorch tutorial.
+    :param int d_model: Dimension of embeddings"
+    :param int max_len: Length of positional encoding, It should be equal to window length.
+    """
     def __init__(self, d_model: int, max_len: int = 5000):
         super().__init__()
         position = torch.arange(max_len).unsqueeze(1)
@@ -21,11 +22,9 @@ class PositionalEncoding(nn.Module):
         pe[:, 0, 1::2] = torch.cos(position * div_term)
         self.register_buffer('pe', pe)
 
-    def forward(self, x: TensorType) -> TensorType:
-        """
-        Args:
-            x: Tensor, shape [seq_len, batch_size, embedding_dim]
-        """
+    @typechecked
+    def forward(self, x: torch.tensor["batch_size", "seq_length", "embedding_dim"]
+    ) -> torch.tensor["batch_size", "seq_length", "embedding_dim"]:
         x = x.permute(1,0,2)
         x = x + self.pe[:x.size(0)]
         return x.permute(1,0,2)
