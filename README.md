@@ -13,10 +13,10 @@
 # \# TODO list
 Not in any particular order.
 
-- [ ] add logging, and everything that might concern it  
-- [ ] add synthetic data generation
-- [ ] add model checkpointing, therefore saving and loading  
-- [ ] add support for cuda  
+- [] add logging, and everything that might concern it  
+- [x] add synthetic data generation
+- [x] add model checkpointing, therefore saving and loading  
+- [x] add support for cuda  
 - [x] add soft cross-entropy objective AND random +- class data augmentation  
   - [ ] make it parametizable
 - [x] add plotting  
