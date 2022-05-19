@@ -8,6 +8,20 @@ from typeguard import typechecked
 ASSERTION_ERROR = "Original and generated data must have to equal shape"
 
 class QMetric():
+    """
+    Class calculating provided metrics:
+        - accuracy
+        - soft accuracy (+/- soft_acc_threshold)
+        - mean square error (mse)
+        - root mean square error (rmse)
+        - mean absolute error (mae)
+    Metrics can be calculating in two ways:
+        1) Indirect creating instance (all are calculated while initializing class)
+        2) Direct using static methods
+    :param QTimeSeries original: Original (ground truth) quantized time series
+    :param QTimeSeries generated: Generated quantized time series
+    :param int soft_acc_treshold: Define acceptable difference between original and generated token.
+    """
     @typechecked
     def __init__(self,
                 original:QTimeSeries,
@@ -21,6 +35,8 @@ class QMetric():
         self.soft_acc_threshold = soft_acc_threshold
         self.accuracy = self.calc_accuracy(original, generated)
         self.soft_accuracy = self.calc_soft_accuracy(original, generated,self.soft_acc_threshold)
+        self.mse = self.calc_mse(original.tokens_y, generated.tokens_y)
+        self.rmse = np.sqrt(self.mse)
         self.mae = self.calc_mae(original.tokens_y,generated.tokens_y)
     
     @staticmethod
@@ -57,6 +73,26 @@ class QMetric():
         if type(original).__name__ == QTimeSeries.__name__:
             original, generated = original.tokens, generated.tokens
         return (np.abs(original - generated) <= threshold).mean()
+     
+    @staticmethod
+    @typechecked
+    def calc_mse(original: Union[QTimeSeries, np.ndarray],
+                generated: Union[QTimeSeries, np.ndarray]
+    ) -> float:
+        __class__.__validate(original, generated)
+        if type(original).__name__ == QTimeSeries.__name__:
+            original, generated = original.tokens_y, generated.tokens_y 
+        return np.square(original - generated).mean()
+    
+    @staticmethod
+    @typechecked
+    def calc_rmse(original: Union[QTimeSeries, np.ndarray],
+                generated: Union[QTimeSeries, np.ndarray]
+    ) -> float:
+        __class__.__validate(original, generated)
+        if type(original).__name__ == QTimeSeries.__name__:
+            original, generated = original.tokens_y, generated.tokens_y 
+        return np.sqrt(np.square(original - generated).mean())
       
     @staticmethod
     @typechecked
