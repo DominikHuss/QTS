@@ -1,6 +1,6 @@
 import abc
 from preprocessing import TimeSeriesQuantizer
-from dataset import QDataset, QDatasetForTransformerARModel, QDatasetForTransformerMLMModel, QDatasetForHuggingFaceModels
+from dataset import QDataset, QDatasetForTransformerARModel, QDatasetForTransformerMLMModel, QDatasetForBertModel, QDatasetForGPTModel
 from model import TransformerModel, BertModel, GPTModel, QModelContainer
 
 class QFactory(abc.ABC):
@@ -30,13 +30,13 @@ class TransformerMLMFactory(QFactory):
     
     def get_container(self) -> QModelContainer:
         quant = TimeSeriesQuantizer()
-        model = TransformerModel(objective="mlm")
+        model = TransformerModel(objective="mlm", mask_token=quant.special_tokens['mask'])
         return QModelContainer(model=model, quantizer=quant)
 
 
 class BertFactory(QFactory):
     def get_dataset(self, split:str, batch:bool) -> QDataset:
-        return QDatasetForHuggingFaceModels(self.ts, split=split, batch=batch)
+        return QDatasetForBertModel(self.ts, split=split, batch=batch)
     
     def get_container(self) -> QModelContainer:
         quant = TimeSeriesQuantizer()
@@ -49,12 +49,11 @@ class BertFactory(QFactory):
    
 class GPTFactory(QFactory):
     def get_dataset(self, split:str, batch:bool) -> QDataset:
-        return QDatasetForHuggingFaceModels(self.ts, split=split, batch=batch)
+        return QDatasetForGPTModel(self.ts, split=split, batch=batch)
     
     def get_container(self) -> QModelContainer:
         quant = TimeSeriesQuantizer()
-        model = GPTModel(mask_token=quant.special_tokens['mask'],
-                         vocab_size=len(quant.bins_indices))
+        model = GPTModel(vocab_size=len(quant.bins_indices))
         return QModelContainer(model=model, quantizer=quant)
 
     

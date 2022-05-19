@@ -12,7 +12,7 @@ def validate_args(args: Namespace) -> Namespace:
         warnings.warn(f"Arg `trans_num_embedding` must equal to sum of args: `qtz_num_bins` and 'qtz_special_bins'." +
                       f"Force change value of `trans_num_embedding` to `qtz_num_bins` + 'qtz_special_bins'")
         args.trans_num_embedding = args.qtz_num_bins + args.qtz_special_bins
-    if args.trans_pos_max_len < args._global_window_length:
+    if args.trans_pos_max_len < args.window_length:
         warnings.warn(f"Arg `trans_pos_max_len` must be greater or equal to `window_length` ." +
             f"Force change value of `trans_pos_max_len` to `window_length`")
         args.trans_pos_max_len = args.window_length
@@ -21,12 +21,12 @@ def validate_args(args: Namespace) -> Namespace:
                       "Force change value of qmc_num_last_unmasked to `qds_num_last_unmasked`")
         args.qmc_num_last_unmasked = args.qds_num_last_unmasked
     
-    assert args.mlm_masked_token_prob + args.mlm_random_token_prob <= 1, "Sum of args `mlm_masked_token_prob` and `mlm_random_token_prob` must be less or equal to 1.0 "
-    if args.mlm_masked_token_prob + args.mlm_random_token_prob == 1:
+    assert args.qds_mlm_mask_token_prob + args.qds_mlm_random_token_prob <= 1, "Sum of args `mlm_masked_token_prob` and `mlm_random_token_prob` must be less or equal to 1.0 "
+    if args.qds_mlm_mask_token_prob + args.qds_mlm_random_token_prob == 1:
         warnings.warn("Probability of masking tokens and probability of random replacing tokens equals to 1" +
                       "None of the inputs tokens will be unchanged. It can cause inappropriate learning and in future model malfunction") 
 
-    if args.qmc_save_model_path == args.qmc_load_model_path:
+    if args.qmc_save_model_path is not None and args.qmc_save_model_path == args.qmc_load_model_path:
         warnings.warn("Save path and load path model are the same.")
     
     if args.SMOKE_TEST:

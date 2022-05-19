@@ -74,10 +74,21 @@ class NgramModel(nn.Module, QModel):
 
 @parse_args(args_prefix="trans")
 class TransformerModel(nn.Module, QModel):
+    """
+    Implementations of encoder part of original transformer architecture (Vastwani et all). Model contains two subtypes depending on learning objective:
+        1)Autoregressive -- model is learned to predict next token.
+        2)Masked Language Model -- model is learned similar to masked language model (cloze task) like BERT.
+    :param str objective: One of 'ar', 'mlm'. Defines learning objective. Defaults to 'ar'.
+    :param int mask_token: Index of masked_token. It's required for 'mlm' objective. 
+    """
     def __init__(self,
-                 objective: str) -> None:
+                 objective: str,
+                 mask_token: int = None) -> None:
         super().__init__()
         self.objective = objective
+        self.mask_token = mask_token
+        if self.objective == 'mlm':
+            assert not (mask_token is None), "For `mlm` objective mask token must be given."
         
     @typechecked
     def train_one_epoch(self, epoch, train_dataloader: DataLoader):
@@ -113,7 +124,6 @@ class TransformerModel(nn.Module, QModel):
             _y = torch.multinomial(F.softmax(self.forward(_y), dim=-1).squeeze(0), 1).squeeze(-1)
             _y = _y.unsqueeze(0) if len(y.shape) == 2 else _y
             return _y
-
 
     def evaluate(self, 
                  eval_dataloader: DataLoader,
@@ -211,13 +221,15 @@ class TransformerModel(nn.Module, QModel):
 
 @parse_args(args_prefix="trans")
 class BertModel(nn.Module, QModel):
+    """
+    Wrapper BERT model from hugginface to qts problem".
+    """
     def __init__(self,
                  cls_token:int,
                  sep_token:int,
                  mask_token:int,
                  pad_token:int,
-                 vocab_size:int,
-                 *args, **kwargs) -> None:
+                 vocab_size:int) -> None:
         super().__init__()
         #TODO: add special tokens validations
         self.cls_token = cls_token
@@ -230,16 +242,8 @@ class BertModel(nn.Module, QModel):
     def train_one_epoch(self, epoch, train_dataloader: DataLoader):
         epoch_loss = 0
         self.train()
-        for (tokens, labels, true) in train_dataloader:
-            # loss = self.model(input_ids=tokens, labels=labels).loss
-            # loss.backward()
-
-            outputs = self.model(input_ids=tokens, labels= labels)
-            predicted_token = outputs.logits[0]
-            predicted_token = torch.nn.functional.softmax(predicted_token)
-            predicted_token = torch.argmax(predicted_token, dim=-1)
-            true = true[0]
-            loss = outputs.loss
+        for batch in train_dataloader:
+            loss = self.model(**batch).loss
             loss.backward()
             self.optimizer.step()
             self.optimizer.zero_grad()
@@ -254,8 +258,8 @@ class BertModel(nn.Module, QModel):
         with torch.no_grad():
             self.eval()
             eval_loss = 0
-            for (tokens, labels, true) in eval_dataloader:
-                loss = self.model(input_ids=tokens, labels=labels).loss
+            for batch in eval_dataloader:
+                loss = self.model(**batch).loss
                 eval_loss += loss.item()
         if epoch >= 0:
             print(f"{_dataset} -- Epoch {epoch}: Loss = {eval_loss/len(eval_dataloader)}")
@@ -276,7 +280,7 @@ class BertModel(nn.Module, QModel):
         self.eval()
         with torch.no_grad():
             _time_series = time_series.clone()
-            full_time_series = _time_series.clone()
+            full_time_series = _time_series[1:-1].clone()
             cls_token= torch.tensor([self.cls_token], device=self._global_cuda)
             mask_token = torch.tensor([self.mask_token], device=self._global_cuda)
             sep_token =  torch.tensor([self.sep_token], device=self._global_cuda)
@@ -286,34 +290,29 @@ class BertModel(nn.Module, QModel):
                                             _time_series,
                                             mask_token,
                                             sep_token))
-                outputs = self.model(input_ids=_time_series.unsqueeze(0))
-                predicted_token = outputs.logits[0][-2]
-                predicted_token = torch.nn.functional.softmax(predicted_token)
-                predicted_token = torch.argmax(predicted_token)
-                
-                #predicted_token = self.predict(_time_series)# get [MASK] prediction
+                predicted_token = self.predict(_time_series)
                 _time_series = torch.cat((_time_series[2:-2], predicted_token.unsqueeze(0)))
                 full_time_series = torch.cat((full_time_series, predicted_token.unsqueeze(0)), dim=-1)
-            
         return full_time_series
 
     def save(self, save_path: str) -> None:
-            torch.save(self.module.state_dict(), save_path)
+            torch.save(self.model.state_dict(), save_path)
     
     def load(self, load_path: str) -> None:
-        self.module.load_state_dict(torch.load(load_path))
+        self.model.load_state_dict(torch.load(load_path))
         self.was_trained = True
     
     def _build(self):
         max_length = self._global_window_length + 3 #[CLS] tokens *[MASK] [SEP] #*only when generating
         config = BertConfig(vocab_size=self.vocab_size,
-                            max_length=42,
+                            hidden_size=self.embedding_dim*self.att_num_heads,
+                            max_length=max_length,
                             num_hidden_layers=self.att_num_layers,
                             num_attention_heads=self.att_num_heads,
                             intermediate_size=self.att_feedforward_dim,
-                            #hidden_dropout_prob=self.dropout,
-                            #attention_probs_dropout_prob=self.dropout,
-                            #max_position_embeddings=max_length,
+                            hidden_dropout_prob=self.dropout,
+                            attention_probs_dropout_prob=self.dropout,
+                            max_position_embeddings=max_length,
                             mask_token_id=self.mask_token,
                             cls_token_id =self.cls_token,
                             sep_token_id=self.sep_token,
@@ -326,20 +325,20 @@ class BertModel(nn.Module, QModel):
 
 @parse_args(args_prefix="trans")
 class GPTModel(nn.Module, QModel):
+    """
+    Wrapper GPT2 model from huggingface to qts problem.
+    """
     def __init__(self,
-                mask_token:int,
-                vocab_size: int,
-                *args, **kwargs) -> None:
+                vocab_size: int) -> None:
         super().__init__()
-        self.mask_token = torch.tensor(mask_token).unsqueeze(0)
         self.vocab_size = vocab_size   
     
     @typechecked
     def train_one_epoch(self, epoch, train_dataloader: DataLoader):
         epoch_loss = 0
         self.train()
-        for (tokens, labels) in train_dataloader:
-            loss = self.model(input_ids=tokens, labels=labels).loss
+        for batch in train_dataloader:
+            loss = self.model(**batch).loss
             loss.backward()
 
             self.optimizer.step()
@@ -354,8 +353,8 @@ class GPTModel(nn.Module, QModel):
                  _dataset: str = "EVAL"):
         self.eval()
         eval_loss = 0
-        for (tokens, labels) in eval_dataloader:
-            loss = self.model(input_ids=tokens, labels=labels).loss
+        for batch in eval_dataloader:
+            loss = self.model(**batch).loss
             eval_loss += loss.item()
         if epoch >= 0:
             print(f"{_dataset} -- Epoch {epoch}: Loss = {eval_loss/len(eval_dataloader)}")
@@ -366,7 +365,6 @@ class GPTModel(nn.Module, QModel):
     def predict(self, y: Union[TensorType[-1], TensorType[-1, -1]]) -> TensorType:
         self.eval()
         return F.softmax(self.model(input_ids=y.unsqueeze(0)).logits[0][-1],dim=-1).argmax(dim=-1)
-        #return F.softmax(self.model(input_ids=y.unsqueeze(0)).logits.squeeze(0), dim=-1).argmax(dim=-1)
         
     @typechecked
     def generate(self, 
@@ -378,40 +376,32 @@ class GPTModel(nn.Module, QModel):
         _time_series = time_series.clone()
         full_time_series = _time_series.clone()
         for _ in range(horizon):
-            # _time_series = torch.cat((_time_series,
-            #                          self.mask_token))
-            #predicted_token = self.predict(_time_series)
-            outputs = self.model(input_ids=_time_series.unsqueeze(0))
-            predicted_token = outputs.logits[0][-1]
-            predicted_token = torch.nn.functional.softmax(predicted_token)
-            predicted_token = torch.argmax(predicted_token)
+            predicted_token = self.predict(_time_series)
             _time_series = torch.cat((_time_series[1:], predicted_token.unsqueeze(0)))
             full_time_series = torch.cat((full_time_series, predicted_token.unsqueeze(0)), dim=-1)
-            
         return full_time_series
+    
     def save(self, save_path: str) -> None:
-            torch.save(self.module.state_dict(), save_path)
+            torch.save(self.model.state_dict(), save_path)
     
     def load(self, load_path: str) -> None:
-        self.module.load_state_dict(torch.load(load_path))
+        self.model.load_state_dict(torch.load(load_path))
         self.was_trained = True
     
     def _build(self):
-        max_length = self._global_window_length + 1 #tokens *[MASK] #*only when generating
+        max_length = self._global_window_length
         config = GPT2Config(vocab_size=self.vocab_size,
                             n_positions=max_length,
-                            n_embd=self.embedding_dim,
+                            n_embd=self.embedding_dim*self.att_num_heads,
                             n_layer=self.att_num_layers,
                             n_head=self.att_num_heads,
                             resid_pdrop=self.dropout,
                             attn_pdrop=self.dropout,
                             predict_special_tokens=False,
                             max_position_embeddings=max_length,
-                            mask_token_id=self.mask_token.item(),
-                            )
-        self.model =  GPT2LMHeadModel(config)
+        )
+        self.model = GPT2LMHeadModel(config)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        self.mask_token = self.mask_token.to(device=torch.device(self._global_cuda))
         if self._global_cuda == "cuda":
             self.cuda()
 
@@ -441,26 +431,29 @@ class QModelContainer():
         train_dataloader = DataLoader(train_dataset,
                                       batch_size=self.batch_size,
                                       shuffle=self.shuffle,
-                                      collate_fn=train_collate_fn,
-                                      pin_memory=True,
-                                      num_workers=4*torch.cuda.device_count())
+                                      collate_fn=train_collate_fn)
         eval_dataloader = (DataLoader(eval_dataset,
                                       batch_size=self.batch_size,
                                       shuffle=self.shuffle,
-                                      collate_fn=eval_collate_fn,
-                                      pin_memory=True,
-                                      num_workers=4*torch.cuda.device_count())
+                                      collate_fn=eval_collate_fn)
                            if eval_dataset is not None else train_dataloader)
         for epoch in range(self.num_epochs):
             self.model.train_one_epoch(epoch, train_dataloader)
             if epoch % self.eval_epoch == 0:
                 self.model.evaluate(eval_dataloader, epoch=epoch)
         self.model.was_trained = True
+        
+        if self.save_model_path:
+            self.model.save(self.save_model_path)
 
     @typechecked
     def test(self,
              test_dataset: QDataset):
-        test_dataloader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=self.shuffle)
+        test_collate_fn = test_dataset.process_mlm if self._global_model == "transformer_mlm" else None
+        test_dataloader = DataLoader(test_dataset,
+                                     batch_size=self.batch_size,
+                                     shuffle=self.shuffle,
+                                     collate_fn=test_collate_fn)
         self.model.evaluate(test_dataloader, _dataset="TEST")
 
     @typechecked
@@ -471,17 +464,16 @@ class QModelContainer():
                  window_length: int = None,
                  stochastic: bool = False,
                  id: str = None) -> Optional[Union[QTimeSeries, TensorType[-1], TensorType[-1, -1]]]:
-        test = "TEST"
         if not self.model.was_trained:
             warnings.warn("The model was not trained, or was reset!")
         
         if window_length is None:
             if (type(self.model).__name__ == TransformerModel.__name__
-                or type(self.model).__name__ == GPTModel.__name__):#isinstance(self.model, type(TransformerModel)): why doesn't work properly?
+                or type(self.model).__name__ == GPTModel.__name__):
                 window_length = self._global_window_length - self.num_last_unmasked
             
             elif type(self.model).__name__ == BertModel.__name__:
-                window_length = self._global_window_length + 2 #[CLS] tokens [SEP]
+                window_length = self._global_window_length + 2
             else:
                 window_length = self._global_window_length
         
@@ -522,4 +514,5 @@ class QModelContainer():
         return qts
 
     def _build(self):
-        pass
+        if self.load_model_path:
+            self.model.load(self.load_model_path)

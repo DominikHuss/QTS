@@ -22,9 +22,7 @@ class PositionalEncoding(nn.Module):
         pe[:, 0, 1::2] = torch.cos(position * div_term)
         self.register_buffer('pe', pe)
 
-    @typechecked
-    def forward(self, x: torch.tensor["batch_size", "seq_length", "embedding_dim"]
-    ) -> torch.tensor["batch_size", "seq_length", "embedding_dim"]:
+    def forward(self, x):
         x = x.permute(1,0,2)
         x = x + self.pe[:x.size(0)]
         return x.permute(1,0,2)
