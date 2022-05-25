@@ -34,7 +34,7 @@ def main(_global_input_dir,
         exit()
     print("Plotting")
     train_metric, eval_metric, test_metric = [],[],[]
-    for id_ ,(train_ts, eval_ts, test_ts) in enumerate(zip(train_qds.raw_unbatched_data,
+    for id_, (train_ts, eval_ts, test_ts) in enumerate(zip(train_qds.raw_unbatched_data,
                                           eval_qds.raw_unbatched_data,
                                           test_qds.raw_unbatched_data)):
         train_first_window, train_org = _split_original_ts(train_qds, id_)
@@ -47,7 +47,7 @@ def main(_global_input_dir,
         test_generated = _get_only_generated(qmc, len(test_org.tokens) + fix_horizon, test_qds, id_)
         
        
-        if id_  % 10 == 0:
+        if id_  % 1 == 0:
             print(f"Plot {id_} ts")
             _plot(train_ts, eval_ts, test_ts,
                   train_generated,train_first_window,

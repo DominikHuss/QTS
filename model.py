@@ -279,17 +279,17 @@ class BertModel(nn.Module, QModel):
                  stochastic) -> TensorType: 
         self.eval()
         with torch.no_grad():
-            _time_series = time_series.clone()
-            full_time_series = _time_series[1:-1].clone()
-            cls_token= torch.tensor([self.cls_token], device=self._global_cuda)
-            mask_token = torch.tensor([self.mask_token], device=self._global_cuda)
-            sep_token =  torch.tensor([self.sep_token], device=self._global_cuda)
+            full_time_series = time_series[1:-1].clone()
+            _time_series = torch.cat((time_series[:-1].clone(),
+                                    self.mask_token,
+                                    self.sep_token))
+           
             for i in range(horizon):
                 if i >0: 
-                    _time_series = torch.cat((cls_token,
+                    _time_series = torch.cat((self.cls_token,
                                             _time_series,
-                                            mask_token,
-                                            sep_token))
+                                            self.mask_token,
+                                            self.sep_token))
                 predicted_token = self.predict(_time_series)
                 _time_series = torch.cat((_time_series[2:-2], predicted_token.unsqueeze(0)))
                 full_time_series = torch.cat((full_time_series, predicted_token.unsqueeze(0)), dim=-1)
@@ -303,6 +303,10 @@ class BertModel(nn.Module, QModel):
         self.was_trained = True
     
     def _build(self):
+        self.cls_token= torch.tensor([self.cls_token], device=self._global_cuda)
+        self.mask_token = torch.tensor([self.mask_token], device=self._global_cuda)
+        self.sep_token =  torch.tensor([self.sep_token], device=self._global_cuda)
+        self.pad_token =  torch.tensor([self.pad_token], device=self._global_cuda)
         max_length = self._global_window_length + 3 #[CLS] tokens *[MASK] [SEP] #*only when generating
         config = BertConfig(vocab_size=self.vocab_size,
                             hidden_size=self.embedding_dim*self.att_num_heads,
@@ -313,10 +317,10 @@ class BertModel(nn.Module, QModel):
                             hidden_dropout_prob=self.dropout,
                             attention_probs_dropout_prob=self.dropout,
                             max_position_embeddings=max_length,
-                            mask_token_id=self.mask_token,
-                            cls_token_id =self.cls_token,
-                            sep_token_id=self.sep_token,
-                            pad_token_id=self.pad_token)
+                            mask_token_id=self.mask_token.item(),
+                            cls_token_id =self.cls_token.item(),
+                            sep_token_id=self.sep_token.item(),
+                            pad_token_id=self.pad_token.item())
         self.model =  BertForMaskedLM(config)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr= self.lr, weight_decay=self.weight_decay)
         if self._global_cuda == "cuda":
