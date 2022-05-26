@@ -133,8 +133,9 @@ class QDatasetBase(QDataset):
                                          QTimeSeries]:
         """
         Default implementation of getting first batch (first window) of given time series.
-            It can also return only raw value, length of batch and index of next window
-        :params str id: Id of given time series
+            It can also return additional data: preprocessed y, number of batches of given time series (as `length`)
+            and index of first batch.
+        :params str id: Id of given time series.
         :params bool _all: Boolean value. If True return additional information (see details in method description). 
         """
         length = 0
@@ -144,12 +145,15 @@ class QDatasetBase(QDataset):
         for i in range(len(self.raw_data)):
             if self.raw_data[i].id() == id:
                 if not _all:
-                    return copy.copy(self.raw_data[i])
+                    return copy.deepcopy(self.raw_data[i])
                 length += 1
                 if start == -1:
                     start = i
                     qts = copy.deepcopy(self.raw_data[i])
-                    prepped_y = self.data[i]["y"]
+                    if self.data is None:
+                        prepped_y = None
+                    else:    
+                        prepped_y = self.data[i]["y"]
             else:
                 if start != -1:
                     break
@@ -160,7 +164,7 @@ class QDatasetBase(QDataset):
         return (qts, prepped_y), start, length
             
     def __len__(self):
-        return len(self.data)
+        return len(self.raw_data)
     
     def __random_shifts(self,y:torch.Tensor):
         shifts_idx = torch.tensor([0.1, 0.8, 0.1]).multinomial(num_samples=y.shape[0], replacement=True)
@@ -249,20 +253,20 @@ class QDatasetForTransformerMLMModel(QDatasetBase):
     QDataset for TransformerMLM
     """
     @typechecked
-    def __init__(self, 
+    def __init__(self,
                  _data: Union[np.ndarray, List[np.ndarray], TimeSeries, List[TimeSeries], QTimeSeries, List[QTimeSeries]],
                  split: Literal["train", "eval", "test", "none"] = "none",
                  *,
                  batch: bool = False,
                  soft_labels: bool = False,
                  random_shifts: bool = False) -> None:
-        super().__init__(_data, split, batch= batch, soft_labels=soft_labels, random_shifts=random_shifts)
+        super().__init__(_data, split, batch=batch, soft_labels=soft_labels, random_shifts=random_shifts)
      
     def __getitem__(self, idx):
         return {"y": self._get_y(idx),
                 "y_hat_probs": self.data[idx]["y_hat_probs"],
                 "idx": torch.tensor([idx])}
-    
+        
     def _get_y(self, idx):
         tokens, _, _, _ = self.raw_data[idx].get(self.split if self.inner_split else "none")
         return torch.from_numpy(tokens).to(device=torch.device(self._global_cuda))
@@ -275,11 +279,7 @@ class QDatasetForTransformerMLMModel(QDatasetBase):
         num_tokens = tokens.shape[0]
 
         t = torch.zeros((num_tokens, num_all_bins),device=torch.device(self._global_cuda)).scatter(-1, tokens.unsqueeze(-1), 1)
-        normal_t = t[...,:num_bins]
-        special_t = t[...,num_bins:]
-
-        kernel = torch.tensor([[[0.05, 0.1, 1, 0.1, 0.05]]]).repeat(num_tokens, 1, 1)
-
+     
         if self.soft_labels:
           t = self.__soft_labels(t, num_bins, num_tokens)
         return t.to(device=torch.device(self._global_cuda))

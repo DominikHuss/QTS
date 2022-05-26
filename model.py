@@ -1,8 +1,7 @@
 import abc
 import warnings
 from typing import Union, Optional
-from numpy import save
-from pyparsing import col
+
 
 import torch
 import torch.nn as nn
@@ -222,7 +221,7 @@ class TransformerModel(nn.Module, QModel):
 @parse_args(args_prefix="trans")
 class BertModel(nn.Module, QModel):
     """
-    Wrapper BERT model from hugginface to qts problem".
+    Wrapper BERT model from huggingface to qts problem".
     """
     def __init__(self,
                  cls_token:int,
